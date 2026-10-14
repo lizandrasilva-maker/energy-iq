@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { supabase } from "../lib/supabase";
+import { streamRecent, fetchSensorRows, subscribeMeasurements, isOnline, SOURCE_LABEL } from "../lib/telemetry";
 import { Plus, Cpu, Zap, TrendingDown, Factory, Clock, X, Check, Building2, BarChart2, Activity, Gauge, Calendar, Radio, Waves } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import {
@@ -20,6 +20,14 @@ const HISTORY_LIMIT = 5000;
 const timeLabel = (iso) =>
   new Date(iso || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
+/** "14:09:16" se for hoje; "12/10 21:45" se for de outro dia. */
+const whenLabel = (iso) => {
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? timeLabel(iso)
+    : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+};
+
 const toLivePoint = (row) => ({
   time: timeLabel(row.created_at),
   power: wattsToKw(row.power) ?? 0,
@@ -27,8 +35,13 @@ const toLivePoint = (row) => ({
   current: row.current ?? null,
 });
 
-/** Aplica a leitura de um sensor ao equipamento correspondente. */
-const applyReading = (eq, row) => ({
+/**
+ * Aplica a leitura de um sensor ao equipamento correspondente. Uma leitura
+ * mais antiga que a atual (vinda da outra fonte) é ignorada: vale quem
+ * enviou por último.
+ */
+const applyReading = (eq, row) =>
+  eq.lastReadingAt && Date.parse(row.created_at) < Date.parse(eq.lastReadingAt) ? eq : ({
   ...eq,
   powerKw: wattsToKw(row.power) ?? eq.powerKw,
   voltage: row.voltage ?? eq.voltage,
@@ -38,6 +51,7 @@ const applyReading = (eq, row) => ({
   thdCurrent: row.thd_current ?? eq.thdCurrent ?? null,
   thdVoltage: row.thd_voltage ?? eq.thdVoltage ?? null,
   lastReadingAt: row.created_at,
+  source: row.source,
   measured: true,
 });
 
@@ -45,6 +59,12 @@ export default function SmartSensors() {
   const [sectors, setSectors] = useState(initialSectors);
   const [equipments, setEquipments] = useState(initialEquipments);
   const [liveHistory, setLiveHistory] = useState({}); // sensorId -> pontos
+  const [sourcesDown, setSourcesDown] = useState([]); // fontes que não responderam
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(t);
+  }, []);
   const chart = useChartTheme();
 
   const [isEquipModalOpen, setIsEquipModalOpen] = useState(false);
@@ -67,23 +87,18 @@ export default function SmartSensors() {
   const [newSectorName, setNewSectorName] = useState("");
 
   useEffect(() => {
-    // 1. Últimas leituras ao abrir a página
-    const fetchInitialTelemetry = async () => {
-      try {
-        const { data } = await supabase
-          .from("measurements")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(200);
-
-        const rows = (data || []).filter(isPlausibleReading).reverse(); // ordem cronológica
-        if (!rows.length) return;
-
+    // 1. Últimas leituras das duas fontes (nova versão + protótipo original).
+    // Cada fonte é aplicada assim que responde; uma fora do ar não trava a outra.
+    const received = [];
+    const stopStream = streamRecent(
+      200,
+      (sourceRows) => {
+        received.push(...sourceRows.filter(isPlausibleReading));
+        const rows = [...received].sort((x, y) => Date.parse(x.created_at) - Date.parse(y.created_at));
         const bySensor = {};
         rows.forEach((row) => {
           (bySensor[row.sensor_id] ||= []).push(row);
         });
-
         setEquipments((prev) =>
           prev.map((eq) => {
             const list = bySensor[eq.sensorId];
@@ -95,39 +110,28 @@ export default function SmartSensors() {
             Object.entries(bySensor).map(([id, list]) => [id, list.slice(-LIVE_POINTS).map(toLivePoint)])
           )
         );
-      } catch (err) {
-        console.error("Erro ao carregar telemetria:", err);
-      }
-    };
+      },
+      (failed) => setSourcesDown(failed)
+    );
 
-    fetchInitialTelemetry();
-
-    // 2. Novas leituras em tempo real
-    const channel = supabase
-      .channel("esp32-realtime-measurements")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "measurements" },
-        (payload) => {
-          const row = payload.new;
-          if (!row || !isPlausibleReading(row)) return;
-
-          setEquipments((prev) => prev.map((eq) => (eq.sensorId === row.sensor_id ? applyReading(eq, row) : eq)));
-          setLiveHistory((prev) => ({
-            ...prev,
-            [row.sensor_id]: [...(prev[row.sensor_id] || []), toLivePoint(row)].slice(-LIVE_POINTS),
-          }));
-        }
-      )
-      .subscribe();
-
+    // 2. Novas leituras em tempo real, de qualquer uma das fontes
+    const stopLive = subscribeMeasurements((row) => {
+      if (!isPlausibleReading(row)) return;
+      setEquipments((prev) => prev.map((eq) => (eq.sensorId === row.sensor_id ? applyReading(eq, row) : eq)));
+      setLiveHistory((prev) => ({
+        ...prev,
+        [row.sensor_id]: [...(prev[row.sensor_id] || []), toLivePoint(row)].slice(-LIVE_POINTS),
+      }));
+      setNow(Date.now());
+    });
     return () => {
-      supabase.removeChannel(channel);
+      stopStream();
+      stopLive();
     };
   }, []);
 
-  // Histórico do sensor do equipamento aberto (busca uma vez por sensor;
-  // trocar o período só reagrupa os dados já carregados)
+  // Histórico do sensor do equipamento aberto, juntando as duas fontes
+  // (busca uma vez por sensor; trocar o período só reagrupa os dados)
   const selectedSensorId = selectedAnalysisEquip?.sensorId || null;
   useEffect(() => {
     if (!selectedSensorId) {
@@ -137,20 +141,14 @@ export default function SmartSensors() {
     }
     let cancelled = false;
     setHistoryState("loading");
-    supabase
-      .from("measurements")
-      .select("created_at, power, voltage, current, power_factor")
-      .eq("sensor_id", selectedSensorId)
-      .order("created_at", { ascending: false })
-      .limit(HISTORY_LIMIT)
-      .then(({ data, error }) => {
+    fetchSensorRows(selectedSensorId, HISTORY_LIMIT)
+      .then(({ rows }) => {
         if (cancelled) return;
-        if (error) {
-          setHistoryState("error");
-          return;
-        }
-        setHistoryRows(data || []);
+        setHistoryRows(rows);
         setHistoryState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setHistoryState("error");
       });
     return () => {
       cancelled = true;
@@ -236,6 +234,11 @@ export default function SmartSensors() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Sensores Inteligentes</h1>
           <p className="text-sm text-slate-500">Monitoramento em tempo real de equipamentos e setores</p>
+          {sourcesDown.length > 0 && (
+            <p className="mt-1 text-xs text-amber-700">
+              Fora do ar agora: {sourcesDown.map((id) => SOURCE_LABEL[id] || id).join(" e ")}. Mostrando os dados da outra fonte.
+            </p>
+          )}
         </div>
 
         <div className="flex w-full sm:w-auto items-center gap-3">
@@ -372,8 +375,18 @@ export default function SmartSensors() {
                         <Radio className="h-3.5 w-3.5 text-slate-400" /> Sensor
                       </span>
                       {item.sensorId ? (
-                        <span className={`font-semibold ${item.measured ? "text-emerald-600" : "text-slate-500"}`} title={item.measured ? `Última leitura: ${timeLabel(item.lastReadingAt)}` : "Sem leituras recebidas"}>
-                          {item.sensorId}{item.measured ? " • ao vivo" : " • sem dados"}
+                        <span className="text-right" title={item.measured ? `Última leitura: ${whenLabel(item.lastReadingAt)}` : "Sem leituras recebidas"}>
+                          <span className="font-semibold text-slate-700">{item.sensorId}</span>{" "}
+                          {!item.measured ? (
+                            <span className="text-slate-400">• sem dados</span>
+                          ) : isOnline(item.lastReadingAt, now) ? (
+                            <span className="font-semibold text-emerald-600">• online</span>
+                          ) : (
+                            <span className="text-slate-500">• offline</span>
+                          )}
+                          {item.measured && (
+                            <span className="block text-[10px] text-slate-400">{SOURCE_LABEL[item.source] || item.source}</span>
+                          )}
                         </span>
                       ) : (
                         <span className="text-slate-400">Não vinculado</span>
@@ -428,7 +441,8 @@ export default function SmartSensors() {
                 <p className="text-xs text-slate-500 mt-1">
                   Setor: <span className="font-semibold">{selectedAnalysisEquip.sector}</span> | Tipo: <span className="font-semibold">{selectedAnalysisEquip.loadType}</span>
                   {selectedAnalysisEquip.measured
-                    ? <> | Última leitura: <span className="font-semibold">{timeLabel(selectedAnalysisEquip.lastReadingAt)}</span></>
+                    ? <> | Última leitura: <span className="font-semibold">{whenLabel(selectedAnalysisEquip.lastReadingAt)}</span>{" "}
+                        ({isOnline(selectedAnalysisEquip.lastReadingAt, now) ? "online" : "offline"}, fonte: {SOURCE_LABEL[selectedAnalysisEquip.source] || selectedAnalysisEquip.source})</>
                     : <> | <span className="font-semibold text-amber-600">valores de exemplo (sem leitura do sensor)</span></>}
                 </p>
               </div>

@@ -22,7 +22,7 @@ import {
 import {
   useChartTheme, AreaGradient, ChartTooltip, ChartLegend, axisProps, gridProps, lineCursor, barCursor, activeDot, formatMonth,
 } from "../components/charts/ChartKit";
-import { supabase } from "../lib/supabase";
+import { fetchRecent } from "../lib/telemetry";
 import { pfSummary, capacitorKvar, formatPower, formatReactive, PF_MIN } from "../lib/electrical";
 import { initialEquipments } from "../data/plant";
 
@@ -66,19 +66,15 @@ export default function ReactiveMonitoring() {
 
   useEffect(() => {
     let cancelled = false;
-    supabase
-      .from("measurements")
-      .select("created_at, sensor_id, power, power_factor, voltage, current")
-      .order("created_at", { ascending: false })
-      .limit(5000)
-      .then(({ data, error }) => {
+    // Duas fontes (nova versão + protótipo original); vale a leitura mais recente
+    fetchRecent(5000)
+      .then(({ rows }) => {
         if (cancelled) return;
-        if (error) {
-          setSensorState("error");
-          return;
-        }
-        setSensorRows(data || []);
+        setSensorRows(rows);
         setSensorState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setSensorState("error");
       });
     return () => {
       cancelled = true;
