@@ -92,14 +92,14 @@ export async function unlockPdf(file, input) {
  * Converte as páginas em JPEG (base64, sem o prefixo data:) e extrai o
  * texto, que ajuda a IA a ler números com precisão.
  */
-export async function pdfToImages(doc) {
+export async function pdfToImages(doc, { scale = RENDER_SCALE, quality = JPEG_QUALITY } = {}) {
   const pages = Math.min(doc.numPages, MAX_PAGES);
   const images = [];
   let text = "";
 
   for (let n = 1; n <= pages; n++) {
     const page = await doc.getPage(n);
-    const viewport = page.getViewport({ scale: RENDER_SCALE });
+    const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
@@ -107,7 +107,7 @@ export async function pdfToImages(doc) {
     ctx.fillStyle = "#ffffff"; // fundo branco: JPEG não tem transparência
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: ctx, viewport }).promise;
-    images.push(canvas.toDataURL("image/jpeg", JPEG_QUALITY).split(",")[1]);
+    images.push(canvas.toDataURL("image/jpeg", quality).split(",")[1]);
 
     const content = await page.getTextContent();
     text += `\n--- Página ${n} ---\n` + content.items.map((i) => i.str).join(" ");

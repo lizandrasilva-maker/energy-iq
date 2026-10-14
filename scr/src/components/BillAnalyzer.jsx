@@ -105,28 +105,61 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
     });
   };
 
-  const callGeminiApi = async (modelName, apiKey, parts) => {
-    return await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts,
-            },
-          ],
-          generationConfig: {
-            temperature: 0.2,
-            response_mime_type: "application/json",
-          },
-        }),
+  // Limite de corpo das funções da Vercel: 4,5 MB. Deixa folga para o JSON.
+  const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+  const jsonSize = (obj) => new Blob([JSON.stringify(obj)]).size;
+
+  // Tentativas de qualidade ao converter PDF em imagens, da melhor para a mais leve
+  const IMAGE_STEPS = [{}, { scale: 1.5, quality: 0.7 }, { scale: 1.2, quality: 0.6 }];
+
+  /** Páginas do PDF como imagens, reduzindo até caber no limite de envio. */
+  const imagesPayload = async (doc) => {
+    let payload = null;
+    for (const step of IMAGE_STEPS) {
+      const { images, text, totalPages, sentPages } = await pdfToImages(doc, step);
+      payload = {
+        files: images.map((data) => ({ mimeType: "image/jpeg", data })),
+        text,
+        pages: { total: totalPages, sent: sentPages },
+      };
+      if (jsonSize(payload) <= MAX_UPLOAD_BYTES) break;
+    }
+    return payload;
+  };
+
+  /** Imagem grande (foto da fatura) reduzida para no máximo 2000 px. */
+  const shrinkImage = async (imageFile) => {
+    const bitmap = await createImageBitmap(imageFile);
+    const ratio = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * ratio);
+    canvas.height = Math.round(bitmap.height * ratio);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+  };
+
+  /** Monta o que vai para /api/analisar-fatura (o prompt fica no servidor). */
+  const buildPayload = async () => {
+    // PDF com senha: páginas já desbloqueadas como imagem + texto extraído
+    if (pdfState === "unlocked" && unlockedDocRef.current) {
+      return imagesPayload(unlockedDocRef.current);
+    }
+    const original = { files: [{ mimeType: file.type || "application/pdf", data: await fileToBase64(file) }] };
+    if (jsonSize(original) <= MAX_UPLOAD_BYTES) return original;
+
+    // Arquivo grande: o PDF vira imagens mais leves; a foto é reduzida
+    if (isPdf(file)) {
+      const doc = await openPdf(file);
+      try {
+        return await imagesPayload(doc);
+      } finally {
+        closePdf(doc);
       }
-    );
+    }
+    return { files: [{ mimeType: "image/jpeg", data: await shrinkImage(file) }] };
   };
 
   const handleAnalyze = async () => {
@@ -135,87 +168,27 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
     setErrorMsg(null);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-      if (!apiKey) {
-        throw new Error("Chave VITE_GEMINI_API_KEY não encontrada no ficheiro .env.");
+      const payload = await buildPayload();
+      if (jsonSize(payload) > MAX_UPLOAD_BYTES) {
+        throw new Error("A fatura é grande demais para enviar, mesmo reduzida. Tente um arquivo com menos páginas.");
       }
 
-      const promptText = `
-        Você é um auditor sênior de faturas de energia elétrica industrial do Grupo A (Tarifa Verde/Azul).
-        Análise este documento e retorne EXCLUSIVAMENTE um objeto JSON válido sem formatação markdown extra.
-        
-        Siga exatamente este esquema:
-        {
-          "client_name": "Nome da empresa/cliente extraído ou Unidade Consumidora",
-          "uc": "Número da UC ou Conta Contrato",
-          "reference_month": "MM/AAAA",
-          "demand_contracted": 0.0 (kW),
-          "demand_measured": 0.0 (kW),
-          "demand_surpass": 0.0 (kW),
-          "consumption_total": 0.0 (kWh — some ponta e fora de ponta; converta MWh para kWh),
-          "total_bill_value": 0.0 (R$),
-          "suggested_demand": 0.0 (kW),
-          "power_factor": 0.92,
-          "insights": [
-            {
-              "type": "warning | danger | success",
-              "title": "Título do diagnóstico",
-              "desc": "Descrição detalhada dos custos, multas envolvidas e recomendações técnicas para economia."
-            }
-          ]
-        }
-      `;
-
-      let parts;
-      if (pdfState === "unlocked" && unlockedDocRef.current) {
-        // PDF protegido: envia as páginas já desbloqueadas como imagens + o texto extraído
-        const { images, text, totalPages, sentPages } = await pdfToImages(unlockedDocRef.current);
-        const note = totalPages > sentPages
-          ? `
-Observação: a fatura tem ${totalPages} páginas; foram enviadas as ${sentPages} primeiras.`
-          : "";
-        parts = [
-          { text: promptText + note },
-          ...images.map((data) => ({ inline_data: { mime_type: "image/jpeg", data } })),
-          ...(text ? [{ text: `Texto extraído do PDF (use para conferir os números):
-${text}` }] : []),
-        ];
-      } else {
-        const base64Data = await fileToBase64(file);
-        parts = [
-          { text: promptText },
-          { inline_data: { mime_type: file.type || "application/pdf", data: base64Data } },
-        ];
-      }
-
-      let response;
-
-      try {
-        response = await callGeminiApi("gemini-3.8-flash", apiKey, parts);
-        if (!response.ok) throw new Error(`Status ${response.status}`);
-      } catch (primaryErr) {
-        response = await callGeminiApi("gemini-3.5-flash", apiKey, parts);
-      }
-
-      if (response.status === 429) {
-        throw new Error("Limite de requisições atingido. Aguarde 1 minuto e tente novamente.");
-      }
+      const response = await fetch("/api/analisar-fatura", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `Erro na comunicação (${response.status})`);
+        throw new Error(
+          data.error ||
+            (response.status === 413
+              ? "A fatura é grande demais para enviar. Tente um arquivo com menos páginas."
+              : `Não foi possível analisar a fatura (erro ${response.status}).`)
+        );
       }
-
-      const data = await response.json();
-      const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (!rawJsonText) {
-        throw new Error("Não foi possível extrair texto da fatura.");
-      }
-
-      const cleanJsonText = rawJsonText.replace(/```json/g, "").replace(/```/g, "").trim();
-      setResult(JSON.parse(cleanJsonText));
+      setResult(data);
     } catch (err) {
       console.error(err);
       setErrorMsg(err.message || "Falha ao analisar a fatura.");
