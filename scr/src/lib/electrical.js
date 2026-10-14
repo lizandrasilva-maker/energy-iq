@@ -59,6 +59,47 @@ export function apparentKva(pKw, pf) {
   return p / f;
 }
 
+/** Fator de potência mínimo sem cobrança de reativo excedente (REN ANEEL 1.000/2021). */
+export const PF_MIN = 0.92;
+
+/**
+ * Resumo elétrico de um conjunto de leituras de um sensor.
+ * O FP do período é energia ativa ÷ energia aparente (ΣP ÷ ΣS), como a
+ * distribuidora avalia: a média simples dos FP distorce quando a carga
+ * varia (ex.: FP 0,2 em espera com poucos watts pesaria igual ao FP do
+ * equipamento trabalhando). Leituras implausíveis ou com P = 0 são ignoradas.
+ */
+export function pfSummary(rows) {
+  const pts = rows
+    .filter(isPlausibleReading)
+    .map((r) => ({ p: wattsToKw(r.power), pf: Number(r.power_factor), t: Date.parse(r.created_at) }))
+    .filter((x) => x.p !== null && x.p > 0 && x.pf > 0 && x.pf <= 1);
+  if (!pts.length) return null;
+
+  let sumP = 0, sumS = 0, lastAt = 0;
+  for (const x of pts) {
+    sumP += x.p;
+    sumS += x.p / x.pf;
+    if (x.t > lastAt) lastAt = x.t;
+  }
+  const pf = sumP / sumS;
+  const avgPowerKw = sumP / pts.length;
+  return {
+    pf,
+    avgPowerKw,
+    reactiveKvar: reactiveKvar(avgPowerKw, pf),
+    samples: pts.length,
+    lastAt: new Date(lastAt).toISOString(),
+  };
+}
+
+/** Banco de capacitores para levar o FP de `pfFrom` até `pfTo`: Qc = P · (tg φ1 − tg φ2). */
+export function capacitorKvar(pKw, pfFrom, pfTo = PF_MIN) {
+  const p = Number(pKw), f1 = Number(pfFrom), f2 = Number(pfTo);
+  if (![p, f1, f2].every(Number.isFinite) || p <= 0 || f1 <= 0 || f1 >= f2 || f2 > 1) return 0;
+  return p * (Math.tan(Math.acos(f1)) - Math.tan(Math.acos(f2)));
+}
+
 // ---------------------------------------------------------------------------
 // Harmônicas: dois modos
 //  - "real": a leitura traz THD medido (campos thd_current / thd_voltage, em %),

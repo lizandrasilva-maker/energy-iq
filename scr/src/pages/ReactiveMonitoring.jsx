@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { 
   AlertTriangle, 
   X, 
@@ -19,6 +19,15 @@ import {
   ResponsiveContainer, 
   ReferenceLine 
 } from "recharts";
+import { supabase } from "../lib/supabase";
+import { pfSummary, capacitorKvar, formatPower, formatReactive, PF_MIN } from "../lib/electrical";
+import { initialEquipments } from "../data/plant";
+
+// Janela analisada por sensor: as 24 h que terminam na última leitura dele
+const WINDOW_MS = 24 * 3600 * 1000;
+const fmtPf = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtTime = (iso) =>
+  new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 // Dados para o gráfico de evolução do Fator de Potência
 const fpHistoryData = [
@@ -47,6 +56,56 @@ export default function ReactiveMonitoring() {
   const [reactiveTariff, setReactiveTariff] = useState("0,15");
   const [result, setResult] = useState(null);
 
+  // FP por setor a partir das leituras dos sensores
+  const [sensorRows, setSensorRows] = useState([]);
+  const [sensorState, setSensorState] = useState("loading"); // loading | ready | error
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from("measurements")
+      .select("created_at, sensor_id, power, power_factor, voltage, current")
+      .order("created_at", { ascending: false })
+      .limit(5000)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setSensorState("error");
+          return;
+        }
+        setSensorRows(data || []);
+        setSensorState("ready");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sectorPf = useMemo(() => {
+    const bySensor = {};
+    for (const r of sensorRows) (bySensor[r.sensor_id] ||= []).push(r);
+    return initialEquipments
+      .filter((eq) => eq.sensorId && bySensor[eq.sensorId])
+      .map((eq) => {
+        const rows = bySensor[eq.sensorId];
+        const last = Date.parse(rows[0].created_at); // ordem decrescente
+        const summary = pfSummary(rows.filter((r) => Date.parse(r.created_at) >= last - WINDOW_MS));
+        return summary && { eq, ...summary, kvarTo092: capacitorKvar(summary.avgPowerKw, summary.pf) };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.pf - b.pf);
+  }, [sensorRows]);
+  const lowPf = sectorPf.filter((s) => s.pf < PF_MIN);
+
+  /** Leva P e FP medidos do setor para a calculadora de capacitores. */
+  const simulateSector = (s) => {
+    setActivePower(s.avgPowerKw.toLocaleString("pt-BR", { maximumFractionDigits: 4, useGrouping: false }));
+    setCurrentFP(fmtPf(s.pf));
+    setTargetFP("0,92");
+    setResult(null);
+    document.getElementById("simulador-capacitores")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   // Função de cálculo fiel do Banco de Capacitores
   const calculateSizing = (e) => {
     e.preventDefault();
@@ -66,14 +125,16 @@ export default function ReactiveMonitoring() {
     const tan2 = Math.tan(Math.acos(fp2));
     const qcKvar = p * (tan1 - tan2);
 
-    // Margem de segurança standard (+5%)
-    const recommendedKvar = Math.ceil(qcKvar * 1.05);
+    // Margem de segurança de 5%. A partir de 1 kvar, arredonda para o kvar
+    // inteiro acima; abaixo disso (cargas pequenas) mantém o valor em var.
+    const withMargin = qcKvar * 1.05;
+    const recommendedKvar = withMargin >= 1 ? Math.ceil(withMargin) : withMargin;
 
     // Estimativa de economia mensal de excedente reativo
     const estimatedMonthlySavings = (p * (tan1 - tan2) * 220 * (tReact || 0.15));
 
     setResult({
-      exactKvar: qcKvar.toFixed(2),
+      exactKvar: qcKvar,
       recommendedKvar: recommendedKvar,
       monthlySavings: estimatedMonthlySavings.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
       powerP: p,
@@ -87,7 +148,7 @@ export default function ReactiveMonitoring() {
 - Potência Ativa: ${result?.powerP} kW
 - Fator de Potência Atual: ${result?.fp1}
 - Fator de Potência Desejado: ${result?.fp2}
-- Dimensionamento Calculado: ${result?.recommendedKvar} kVAr`;
+- Dimensionamento Calculado: ${formatReactive(result?.recommendedKvar)}`;
 
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
   };
@@ -100,20 +161,24 @@ export default function ReactiveMonitoring() {
         <p className="text-sm text-slate-500">Fator de potência e simulação de banco de capacitores</p>
       </div>
 
-      {/* Alerta de FP Baixo */}
-      {showAlert && (
+      {/* Alerta calculado a partir dos sensores */}
+      {showAlert && sensorState === "ready" && lowPf.length > 0 && (
         <div className="p-4 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start justify-between text-amber-800 text-sm shadow-sm transition-all">
           <div className="flex items-start space-x-3">
             <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
             <div>
-              <p className="font-semibold text-amber-900">Fator de potência abaixo de 0,92</p>
+              <p className="font-semibold text-amber-900">
+                {lowPf.length === 1 ? "1 setor" : `${lowPf.length} setores`} com fator de potência abaixo de 0,92
+              </p>
               <p className="text-amber-700/90 text-xs mt-0.5">
-                Sua instalação pode estar gerando excedentes de energia reativa, resultando em cobranças adicionais na fatura.
+                {lowPf.map((s) => `${s.eq.sector} (FP ${fmtPf(s.pf)})`).join(" · ")}. Esses setores aumentam o
+                reativo excedente cobrado na fatura. Veja abaixo quanto de capacitor cada um precisa.
               </p>
             </div>
           </div>
-          <button 
-            onClick={() => setShowAlert(false)} 
+          <button
+            onClick={() => setShowAlert(false)}
+            aria-label="Fechar alerta"
             className="text-amber-500 hover:text-amber-700 p-1 rounded-lg transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
@@ -121,7 +186,92 @@ export default function ReactiveMonitoring() {
         </div>
       )}
 
-      {/* Cards de Indicadores */}
+      {/* FP por setor (sensores) */}
+      <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Fator de potência por setor</h2>
+            <p className="text-xs text-slate-500">
+              Medição dos sensores nas últimas 24 h de leitura de cada um. FP do período = energia ativa ÷ energia aparente.
+            </p>
+          </div>
+        </div>
+
+        {sensorState === "loading" && <p className="text-xs text-slate-400 py-6 text-center">Carregando leituras dos sensores…</p>}
+        {sensorState === "error" && (
+          <p className="text-xs text-rose-600 py-6 text-center">Não foi possível carregar as leituras dos sensores. Recarregue a página.</p>
+        )}
+        {sensorState === "ready" && sectorPf.length === 0 && (
+          <p className="text-xs text-slate-400 py-6 text-center">
+            Nenhum sensor enviou leituras ainda. Assim que o ESP32 enviar dados, o FP de cada setor aparece aqui.
+          </p>
+        )}
+        {sensorState === "ready" && sectorPf.length > 0 && (
+          <div className="overflow-x-auto -mx-2">
+            <table className="w-full text-left text-sm min-w-[640px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                  <th className="font-semibold px-2 py-2">Setor / equipamento</th>
+                  <th className="font-semibold px-2 py-2">FP</th>
+                  <th className="font-semibold px-2 py-2">Potência média</th>
+                  <th className="font-semibold px-2 py-2">Reativa (est.)</th>
+                  <th className="font-semibold px-2 py-2">Capacitor p/ 0,92</th>
+                  <th className="font-semibold px-2 py-2">Última leitura</th>
+                  <th className="px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sectorPf.map((s) => (
+                  <tr key={s.eq.id} className="border-b border-slate-100 last:border-0">
+                    <td className="px-2 py-3">
+                      <p className="font-semibold text-slate-800">{s.eq.sector}</p>
+                      <p className="text-xs text-slate-400">{s.eq.name} · {s.eq.sensorId}</p>
+                    </td>
+                    <td className="px-2 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${s.pf < PF_MIN ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
+                        {fmtPf(s.pf)}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3 text-slate-700">{formatPower(s.avgPowerKw)}</td>
+                    <td className="px-2 py-3 text-slate-700">{formatReactive(s.reactiveKvar)}</td>
+                    <td className="px-2 py-3 font-semibold text-slate-800">
+                      {s.kvarTo092 > 0 ? formatReactive(s.kvarTo092) : <span className="text-emerald-600 font-medium">não precisa</span>}
+                    </td>
+                    <td className="px-2 py-3 text-xs text-slate-500">{fmtTime(s.lastAt)}<br />{s.samples} leituras</td>
+                    <td className="px-2 py-3 text-right">
+                      {s.kvarTo092 > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => simulateSector(s)}
+                          className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-semibold rounded-lg whitespace-nowrap cursor-pointer"
+                        >
+                          Simular capacitor
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {sensorState === "ready" && sectorPf.some((s) => s.kvarTo092 > 0 && s.avgPowerKw < 1) && (
+          <p className="text-[11px] text-slate-400 mt-3">
+            Em cargas pequenas (abaixo de 1 kW), a correção local raramente compensa o custo: avalie o banco no quadro geral.
+          </p>
+        )}
+      </div>
+
+      {/* Cards de Indicadores (fatura) */}
+      <div className="flex items-baseline justify-between gap-2 pt-2">
+        <h2 className="text-base font-bold text-slate-900">Reativo na fatura</h2>
+        <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+          dados de exemplo
+        </span>
+      </div>
+      <p className="text-xs text-slate-500 -mt-4">
+        Estes números passam a ser reais quando o histórico de faturas for salvo (Etapa 2 do plano).
+      </p>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-5 bg-amber-50/30 rounded-2xl border border-amber-100 shadow-sm flex items-center justify-between">
           <div>
@@ -195,7 +345,7 @@ export default function ReactiveMonitoring() {
       </div>
 
       {/* CALCULADORA DE BANCO DE CAPACITORES (POSICIONADA LOGO ABAIXO DO GRÁFICO) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div id="simulador-capacitores" className="grid grid-cols-1 lg:grid-cols-2 gap-6 scroll-mt-4">
         {/* Formulario */}
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center space-x-2.5 mb-6">
@@ -301,10 +451,10 @@ export default function ReactiveMonitoring() {
                   <CheckCircle2 className="h-3.5 w-3.5" /> Dimensionamento Calculado
                 </span>
                 <h3 className="text-2xl font-bold text-slate-900 mt-3">
-                  {result.recommendedKvar} <span className="text-base font-normal text-slate-500">kVAr</span>
+                  {formatReactive(result.recommendedKvar)}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Potência reativa necessária (Cálculo exato: {result.exactKvar} kVAr)
+                  Potência reativa necessária (cálculo exato: {formatReactive(result.exactKvar)}, mais 5% de margem)
                 </p>
               </div>
 
