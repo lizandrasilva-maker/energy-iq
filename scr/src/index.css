@@ -1,114 +1,320 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============================================================
+   EnergyIQ — tokens de tema
+   Cores em canais RGB ("r g b") para funcionar com opacidade do
+   Tailwind (ex.: bg-sky-50/40). O tema é escolhido pelo atributo
+   data-theme no <html> (ver src/lib/theme.jsx).
+   ============================================================ */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  color-scheme: light;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Superfícies e texto */
+  --background: 244 247 252;
+  --surface: 255 255 255;
+  --foreground: 15 26 51;
+  --muted: 238 242 248;
+  --muted-foreground: 100 116 139;
+  --border: 226 232 242;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Semânticos */
+  --primary: 26 140 255;
+  --success: 14 156 87;
+  --warning: 217 119 6;
+  --destructive: 225 29 72;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
+  /* Gráficos (recharts) */
+  --chart-grid: 226 232 242;
+  --chart-axis: 100 116 139;
+  --chart-cursor: 238 242 248;
+
+  --shadow-card: 0 1px 2px rgb(2 12 43 / 0.04), 0 2px 10px -4px rgb(2 12 43 / 0.06);
+
+  /* Escalas de cor */
+  --sky-50:238 247 255;
+  --sky-100:217 237 255;
+  --sky-200:188 224 255;
+  --sky-300:142 205 255;
+  --sky-400:71 180 255;
+  --sky-500:26 140 255;
+  --sky-600:10 111 224;
+  --sky-700:11 88 181;
+  --sky-800:15 74 143;
+  --sky-900:18 63 117;
+  --sky-950:13 38 72;
+  --emerald-50:236 253 243;
+  --emerald-100:209 250 227;
+  --emerald-200:166 244 201;
+  --emerald-300:110 233 168;
+  --emerald-400:52 217 133;
+  --emerald-500:25 194 110;
+  --emerald-600:14 156 87;
+  --emerald-700:13 124 72;
+  --emerald-800:16 98 60;
+  --emerald-900:15 81 51;
+  --emerald-950:4 46 27;
+  --purple-50:245 241 255;
+  --purple-100:236 228 255;
+  --purple-200:218 205 255;
+  --purple-300:191 166 255;
+  --purple-400:164 123 255;
+  --purple-500:139 82 246;
+  --purple-600:118 54 230;
+  --purple-700:100 39 196;
+  --purple-800:83 35 160;
+  --purple-900:70 31 130;
+  --purple-950:43 17 88;
+  --amber-50:255 251 235;
+  --amber-100:254 243 199;
+  --amber-200:253 230 138;
+  --amber-300:252 211 77;
+  --amber-400:251 191 36;
+  --amber-500:245 158 11;
+  --amber-600:217 119 6;
+  --amber-700:180 83 9;
+  --amber-800:146 64 14;
+  --amber-900:120 53 15;
+  --amber-950:69 26 3;
+  --rose-50:255 241 242;
+  --rose-100:255 228 230;
+  --rose-200:254 205 211;
+  --rose-300:253 164 175;
+  --rose-400:251 113 133;
+  --rose-500:244 63 94;
+  --rose-600:225 29 72;
+  --rose-700:190 18 60;
+  --rose-800:159 18 57;
+  --rose-900:136 19 55;
+  --rose-950:76 5 25;
+  --orange-50:255 247 237;
+  --orange-100:255 237 213;
+  --orange-200:254 215 170;
+  --orange-300:253 186 116;
+  --orange-400:251 146 60;
+  --orange-500:249 115 22;
+  --orange-600:234 88 12;
+  --orange-700:194 65 12;
+  --orange-800:154 52 18;
+  --orange-900:124 45 18;
+  --orange-950:67 20 7;
+  --slate-50:244 247 252;
+  --slate-100:238 242 248;
+  --slate-200:226 232 242;
+  --slate-300:203 213 227;
+  --slate-400:148 163 184;
+  --slate-500:100 116 139;
+  --slate-600:71 85 105;
+  --slate-700:51 65 85;
+  --slate-800:30 41 59;
+  --slate-900:15 26 51;
+  --slate-950:2 12 43;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: 6 15 43;
+  --surface: 15 28 68;
+  --foreground: 238 242 250;
+  --muted: 22 36 80;
+  --muted-foreground: 147 162 198;
+  --border: 32 48 96;
+
+  --primary: 26 140 255;
+  --success: 52 217 133;
+  --warning: 251 191 36;
+  --destructive: 251 113 133;
+
+  --chart-grid: 32 48 96;
+  --chart-axis: 116 132 173;
+  --chart-cursor: 22 36 80;
+
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -10px rgb(0 0 0 / 0.6);
+
+  --sky-50:16 41 90;
+  --sky-100:17 50 105;
+  --sky-200:19 64 128;
+  --sky-300:21 84 162;
+  --sky-400:71 180 255;
+  --sky-500:26 140 255;
+  --sky-600:71 180 255;
+  --sky-700:142 205 255;
+  --sky-800:188 224 255;
+  --sky-900:217 237 255;
+  --sky-950:238 247 255;
+  --emerald-50:16 48 73;
+  --emerald-100:17 61 76;
+  --emerald-200:18 81 81;
+  --emerald-300:20 111 89;
+  --emerald-400:52 217 133;
+  --emerald-500:25 194 110;
+  --emerald-600:52 217 133;
+  --emerald-700:110 233 168;
+  --emerald-800:166 244 201;
+  --emerald-900:209 250 227;
+  --emerald-950:236 253 243;
+  --purple-50:30 34 89;
+  --purple-100:40 39 104;
+  --purple-200:55 45 125;
+  --purple-300:77 55 157;
+  --purple-400:164 123 255;
+  --purple-500:139 82 246;
+  --purple-600:164 123 255;
+  --purple-700:191 166 255;
+  --purple-800:218 205 255;
+  --purple-900:236 228 255;
+  --purple-950:245 241 255;
+  --amber-50:43 44 61;
+  --amber-100:61 54 57;
+  --amber-200:89 70 50;
+  --amber-300:130 93 40;
+  --amber-400:251 191 36;
+  --amber-500:245 158 11;
+  --amber-600:251 191 36;
+  --amber-700:252 211 77;
+  --amber-800:253 230 138;
+  --amber-900:254 243 199;
+  --amber-950:255 251 235;
+  --rose-50:42 32 71;
+  --rose-100:61 35 73;
+  --rose-200:88 39 76;
+  --rose-300:130 46 81;
+  --rose-400:251 113 133;
+  --rose-500:244 63 94;
+  --rose-600:251 113 133;
+  --rose-700:253 164 175;
+  --rose-800:254 205 211;
+  --rose-900:255 228 230;
+  --rose-950:255 241 242;
+  --orange-50:43 38 62;
+  --orange-100:62 45 59;
+  --orange-200:90 56 53;
+  --orange-300:132 72 45;
+  --orange-400:251 146 60;
+  --orange-500:249 115 22;
+  --orange-600:251 146 60;
+  --orange-700:253 186 116;
+  --orange-800:254 215 170;
+  --orange-900:255 237 213;
+  --orange-950:255 247 237;
+  --slate-50:11 22 56;
+  --slate-100:19 33 74;
+  --slate-200:29 45 92;
+  --slate-300:43 61 112;
+  --slate-400:116 132 173;
+  --slate-500:147 162 198;
+  --slate-600:176 188 216;
+  --slate-700:201 210 232;
+  --slate-800:221 227 241;
+  --slate-900:238 242 250;
+  --slate-950:247 249 253;
+}
+
+/* ------------------------------------------------------------ */
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: rgb(var(--background));
+    color: rgb(var(--foreground));
+    font-family: theme("fontFamily.sans");
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: theme("fontFamily.heading");
+    letter-spacing: -0.015em;
+  }
+
+  ::selection {
+    background: rgb(46 232 138 / 0.35);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(var(--slate-400));
+  }
+
+  /* Barra de rolagem discreta */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--slate-300)) transparent;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+@layer components {
+  /* Texto com o gradiente da marca (ciano → verde) */
+  .text-gradient-brand {
+    background-image: theme("backgroundImage.brand-gradient-text");
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 }
 
-body {
-  margin: 0;
+/* Cartões: sombra suave no claro, brilho sutil no escuro */
+.shadow-sm {
+  box-shadow: var(--shadow-card);
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+/* ---------- Gráficos (recharts) acompanham o tema ---------- */
+.recharts-cartesian-grid line {
+  stroke: rgb(var(--chart-grid));
+}
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: rgb(var(--chart-grid));
+}
+.recharts-cartesian-axis-tick-value,
+.recharts-cartesian-axis-tick-value tspan {
+  fill: rgb(var(--chart-axis));
+}
+.recharts-tooltip-cursor {
+  fill: rgb(var(--chart-cursor));
+  stroke: rgb(var(--chart-grid));
+}
+.recharts-default-tooltip {
+  background: rgb(var(--surface)) !important;
+  border: 1px solid rgb(var(--border)) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px -12px rgb(2 12 43 / 0.35);
+  color: rgb(var(--foreground));
+}
+.recharts-tooltip-label {
+  color: rgb(var(--foreground)) !important;
+  font-weight: 600;
+}
+.recharts-legend-item-text {
+  color: rgb(var(--muted-foreground)) !important;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+/* ---------- Celular ---------- */
+@media (max-width: 640px) {
+  /* Evita o zoom automático do iOS ao focar campos */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+  /* Títulos de página um pouco menores */
+  main h1.text-2xl,
+  main h1.text-3xl {
+    font-size: 1.375rem;
+    line-height: 1.25;
   }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }

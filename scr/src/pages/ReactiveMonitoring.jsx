@@ -93,7 +93,7 @@ export default function ReactiveMonitoring() {
   };
 
   return (
-    <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
+    <div className="lg:p-6 space-y-6">
       {/* Cabeçalho */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Monitoramento de Reativo</h1>
@@ -184,9 +184,9 @@ export default function ReactiveMonitoring() {
               <Line 
                 type="monotone" 
                 dataKey="fp" 
-                stroke="#0284c7" 
+                stroke="#1a8cff" 
                 strokeWidth={2.5} 
-                dot={{ fill: "#0284c7", r: 4 }} 
+                dot={{ fill: "#1a8cff", r: 4 }} 
                 activeDot={{ r: 6 }} 
               />
             </LineChart>
@@ -275,7 +275,7 @@ export default function ReactiveMonitoring() {
 
             <button
               type="submit"
-              className="w-full mt-2 py-3 bg-[#026aa7] hover:bg-[#025a8e] text-white font-medium rounded-xl text-sm flex items-center justify-center space-x-2 shadow-sm transition-colors cursor-pointer"
+              className="w-full mt-2 py-3 bg-sky-500 hover:bg-sky-600 text-white font-medium rounded-xl text-sm flex items-center justify-center space-x-2 shadow-sm transition-colors cursor-pointer"
             >
               <Calculator className="h-4 w-4" />
               <span>Calcular Dimensionamento</span>

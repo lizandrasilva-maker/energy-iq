@@ -55,8 +55,8 @@ export default function DemandMonitoring() {
   };
 
   return (
-    <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
-      <div className="flex justify-between items-center">
+    <div className="lg:p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Monitoramento de Demanda</h1>
           <p className="text-sm text-slate-500">Acompanhe o consumo mensal vs demanda contratada</p>
@@ -64,7 +64,7 @@ export default function DemandMonitoring() {
         <div className="flex space-x-3">
           <button 
             type="button"
-            className="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white rounded-xl text-sm font-medium flex items-center space-x-2 shadow-sm transition-all cursor-pointer"
+            className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-sm font-medium flex items-center space-x-2 shadow-sm transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>Nova Leitura</span>
@@ -134,7 +134,7 @@ export default function DemandMonitoring() {
               <YAxis domain={[0, 1000]} stroke="#94a3b8" fontSize={12} tickLine={false} />
               <Tooltip cursor={{ fill: "#f8fafc" }} />
               <ReferenceLine y={demandContracted} stroke="#ef4444" strokeDasharray="4 4" label={{ value: `Contratada: ${demandContracted} kW`, fill: "#ef4444", fontSize: 12, position: "top" }} />
-              <Bar dataKey="demand" fill="#0284c7" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="demand" fill="#1a8cff" radius={[2, 2, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

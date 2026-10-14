@@ -93,7 +93,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
+    <div className="lg:p-6 space-y-6">
       {/* Título e Ações */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -195,7 +195,7 @@ export default function Dashboard() {
                 <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
                 <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', borderColor: '#e2e8f0' }} />
-                <Area type="monotone" dataKey="medida" name="Demanda Medida" stroke="#0284c7" fill="#e0f2fe" strokeWidth={2} />
+                <Area type="monotone" dataKey="medida" name="Demanda Medida" stroke="#1a8cff" fill="#1a8cff" fillOpacity={0.15} strokeWidth={2} />
                 <Area type="monotone" dataKey="contratada" name="Contratada" stroke="#f59e0b" fill="transparent" strokeWidth={2} strokeDasharray="4 4" />
               </AreaChart>
             </ResponsiveContainer>
@@ -215,7 +215,7 @@ export default function Dashboard() {
                 <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
                 <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', borderColor: '#e2e8f0' }} />
-                <Bar dataKey="consumo" name="Consumo (kWh)" fill="#0284c7" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="consumo" name="Consumo (kWh)" fill="#1a8cff" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

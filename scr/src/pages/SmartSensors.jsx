@@ -326,17 +326,17 @@ export default function SmartSensors() {
   };
 
   return (
-    <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen relative">
+    <div className="lg:p-6 space-y-6 relative">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Sensores Inteligentes</h1>
           <p className="text-sm text-slate-500">Monitoramento em tempo real de equipamentos e setores</p>
         </div>
         
-        <div className="flex items-center space-x-3">
+        <div className="flex w-full sm:w-auto items-center gap-3">
           <button
             onClick={() => setIsSectorModalOpen(true)}
-            className="px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium flex items-center space-x-2 shadow-sm transition-all cursor-pointer"
+            className="flex-1 sm:flex-none justify-center whitespace-nowrap px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium flex items-center space-x-2 shadow-sm transition-all cursor-pointer"
           >
             <Building2 className="h-4 w-4 text-slate-500" />
             <span>Novo Setor</span>
@@ -344,7 +344,7 @@ export default function SmartSensors() {
 
           <button
             onClick={() => setIsEquipModalOpen(true)}
-            className="px-4 py-2.5 bg-[#026aa7] hover:bg-[#025a8e] text-white rounded-xl text-sm font-medium flex items-center space-x-2 shadow-sm transition-all cursor-pointer"
+            className="flex-1 sm:flex-none justify-center whitespace-nowrap px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-sm font-medium flex items-center space-x-2 shadow-sm transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>Novo Equipamento</span>
@@ -411,7 +411,7 @@ export default function SmartSensors() {
               <XAxis dataKey="sector" stroke="#64748b" fontSize={12} tickLine={false} />
               <YAxis stroke="#64748b" fontSize={12} tickLine={false} />
               <Tooltip cursor={{ fill: "#f8fafc" }} />
-              <Bar dataKey="consumption" fill="#026aa7" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="consumption" fill="#1a8cff" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -490,7 +490,7 @@ export default function SmartSensors() {
       </div>
 
       {selectedAnalysisEquip && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-100 space-y-6 animate-fadeIn max-h-[90vh] overflow-y-auto">
             
             <div className="flex justify-between items-start border-b border-slate-100 pb-4">
@@ -560,15 +560,15 @@ export default function SmartSensors() {
                   <AreaChart data={telemetryHistory[selectedAnalysisEquip.id] || telemetryHistory[1]}>
                     <defs>
                       <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#026aa7" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#026aa7" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#1a8cff" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#1a8cff" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="time" stroke="#64748b" fontSize={11} tickLine={false} />
                     <YAxis stroke="#64748b" fontSize={11} tickLine={false} />
                     <Tooltip />
-                    <Area type="monotone" dataKey="power" name="Potência (kW)" stroke="#026aa7" fillOpacity={1} fill="url(#colorPower)" />
+                    <Area type="monotone" dataKey="power" name="Potência (kW)" stroke="#1a8cff" fillOpacity={1} fill="url(#colorPower)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -578,7 +578,7 @@ export default function SmartSensors() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                 <div>
                   <h4 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                    <Calendar className="h-4 w-4 text-[#026aa7]" />
+                    <Calendar className="h-4 w-4 text-sky-600" />
                     Análise e Comparação de Consumo
                   </h4>
                   <p className="text-xs text-slate-400">Dados acumulados no Supabase</p>
@@ -619,8 +619,8 @@ export default function SmartSensors() {
                     <XAxis dataKey="periodLabel" stroke="#64748b" fontSize={11} tickLine={false} />
                     <YAxis stroke="#64748b" fontSize={11} tickLine={false} />
                     <Tooltip cursor={{ fill: "#f8fafc" }} />
-                    <Bar dataKey="totalEnergyKw" name="Consumo Acumulado (kWh)" fill="#026aa7" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="avgPower" name="Média de Potência (kW)" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="totalEnergyKw" name="Consumo Acumulado (kWh)" fill="#1a8cff" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="avgPower" name="Média de Potência (kW)" fill="#2ee88a" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -652,8 +652,8 @@ export default function SmartSensors() {
       )}
 
       {isEquipModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100 space-y-5 animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100 space-y-5 animate-fadeIn max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900">Cadastrar Novo Equipamento</h3>
               <button
@@ -751,7 +751,7 @@ export default function SmartSensors() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#026aa7] hover:bg-[#025a8e] text-white rounded-xl text-sm font-medium flex items-center space-x-1.5 transition-colors"
+                  className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-sm font-medium flex items-center space-x-1.5 transition-colors"
                 >
                   <Check className="h-4 w-4" />
                   <span>Cadastrar</span>
@@ -763,8 +763,8 @@ export default function SmartSensors() {
       )}
 
       {isSectorModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-100 space-y-5 animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-100 space-y-5 animate-fadeIn max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900">Cadastrar Novo Setor</h3>
               <button
@@ -800,7 +800,7 @@ export default function SmartSensors() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#026aa7] hover:bg-[#025a8e] text-white rounded-xl text-sm font-medium flex items-center space-x-1.5 transition-colors"
+                  className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-sm font-medium flex items-center space-x-1.5 transition-colors"
                 >
                   <Check className="h-4 w-4" />
                   <span>Cadastrar Setor</span>

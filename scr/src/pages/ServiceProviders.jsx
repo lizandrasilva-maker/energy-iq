@@ -163,7 +163,7 @@ export default function ServiceProviders() {
   };
 
   return (
-    <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen relative">
+    <div className="lg:p-6 space-y-6 relative">
       {/* Cabeçalho */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -175,7 +175,7 @@ export default function ServiceProviders() {
 
         <button
           onClick={() => setIsModalOpen(true)}
-          className="px-4 py-2.5 bg-[#026aa7] hover:bg-[#025a8e] text-white rounded-xl text-sm font-medium flex items-center space-x-2 shadow-sm transition-all cursor-pointer"
+          className="px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-sm font-medium flex items-center space-x-2 shadow-sm transition-all cursor-pointer"
         >
           <Plus className="h-4 w-4" />
           <span>Novo Fornecedor</span>
@@ -193,7 +193,7 @@ export default function ServiceProviders() {
                 onClick={() => setSelectedCategory(cat)}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                   isSelected
-                    ? "bg-[#026aa7] text-white shadow-sm"
+                    ? "bg-sky-500 text-white shadow-sm"
                     : "bg-slate-100 hover:bg-slate-200 text-slate-600"
                 }`}
               >
@@ -258,7 +258,7 @@ export default function ServiceProviders() {
             <div className="pt-4 border-t border-slate-100 flex items-center space-x-2">
               <a
                 href={provider.phone ? `tel:${provider.phone}` : "#"}
-                className="px-3 py-1.5 bg-[#026aa7] hover:bg-[#025a8e] text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-colors cursor-pointer"
+                className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-colors cursor-pointer"
               >
                 <Phone className="h-3.5 w-3.5" />
                 <span>Ligar</span>
@@ -288,11 +288,11 @@ export default function ServiceProviders() {
 
       {/* MODAL CADASTRAR NOVO FORNECEDOR */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100 space-y-5 animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100 space-y-5 animate-fadeIn max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-[#026aa7]" />
+                <Building2 className="h-5 w-5 text-sky-600" />
                 Cadastrar Novo Fornecedor
               </h3>
               <button
@@ -451,7 +451,7 @@ export default function ServiceProviders() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#026aa7] hover:bg-[#025a8e] text-white rounded-xl text-xs font-medium flex items-center space-x-1.5 transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-medium flex items-center space-x-1.5 transition-colors cursor-pointer"
                 >
                   <Check className="h-4 w-4" />
                   <span>Cadastrar Fornecedor</span>

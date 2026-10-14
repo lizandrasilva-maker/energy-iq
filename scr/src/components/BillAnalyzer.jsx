@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { 
   Sparkles, Upload, FileText, X, Loader2, Download, Send, 
   MessageCircle, AlertTriangle, CheckCircle2, TrendingUp, 
-  ChevronDown, ChevronUp, Copy, Check, Zap, DollarSign, Building
+  ChevronDown, ChevronUp, Copy, Check, Zap, DollarSign, Building,
+  Lock, Unlock, Eye, EyeOff, KeyRound
 } from "lucide-react";
+import { openPdf, unlockPdf, pdfToImages, closePdf, PdfPasswordError } from "@/lib/pdfUnlock";
+
+const isPdf = (f) => f && (f.type === "application/pdf" || /\.pdf$/i.test(f.name));
 
 export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
   const [file, setFile] = useState(null);
@@ -14,13 +18,81 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
   const [expandedInsight, setExpandedInsight] = useState(0); // índice do accordion aberto
   const [copiedIndex, setCopiedIndex] = useState(null);
 
+  // Proteção por senha do PDF
+  // pdfState: null (imagem/sem arquivo) | "checking" | "open" (sem senha) | "locked" | "unlocked"
+  const [pdfState, setPdfState] = useState(null);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState(null);
+  const unlockedDocRef = useRef(null); // documento pdf.js já aberto com a senha
+
   if (!isOpen) return null;
 
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setResult(null);
-      setErrorMsg(null);
+  const releaseUnlockedDoc = () => {
+    closePdf(unlockedDocRef.current);
+    unlockedDocRef.current = null;
+  };
+
+  const resetFile = () => {
+    releaseUnlockedDoc();
+    setFile(null);
+    setResult(null);
+    setErrorMsg(null);
+    setPdfState(null);
+    setPasswordInput("");
+    setUnlockError(null);
+  };
+
+  const handleClose = () => {
+    resetFile();
+    onClose();
+  };
+
+  const handleFileChange = async (e) => {
+    const selected = e.target.files?.[0];
+    e.target.value = ""; // permite escolher o mesmo arquivo de novo
+    if (!selected) return;
+
+    resetFile();
+    setFile(selected);
+    if (!isPdf(selected)) return;
+
+    // Descobre já na seleção se o PDF pede senha
+    setPdfState("checking");
+    try {
+      const doc = await openPdf(selected);
+      closePdf(doc);
+      setPdfState("open");
+    } catch (err) {
+      if (err instanceof PdfPasswordError) {
+        setPdfState("locked");
+      } else {
+        setPdfState(null);
+        setErrorMsg(err.message);
+      }
+    }
+  };
+
+  const handleUnlock = async (e) => {
+    e?.preventDefault();
+    if (!file || !passwordInput.trim()) return;
+    setUnlocking(true);
+    setUnlockError(null);
+    try {
+      const { doc } = await unlockPdf(file, passwordInput);
+      releaseUnlockedDoc();
+      unlockedDocRef.current = doc;
+      setPdfState("unlocked");
+      setPasswordInput(""); // não mantém a senha na tela
+    } catch (err) {
+      setUnlockError(
+        err instanceof PdfPasswordError
+          ? "Senha incorreta. Confira os dígitos ou tente o CPF/CNPJ completo do titular."
+          : err.message
+      );
+    } finally {
+      setUnlocking(false);
     }
   };
 
@@ -33,7 +105,7 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
     });
   };
 
-  const callGeminiApi = async (modelName, apiKey, promptText, base64Data, mimeType) => {
+  const callGeminiApi = async (modelName, apiKey, parts) => {
     return await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
       {
@@ -45,10 +117,7 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
         body: JSON.stringify({
           contents: [
             {
-              parts: [
-                { text: promptText },
-                { inline_data: { mime_type: mimeType, data: base64Data } },
-              ],
+              parts,
             },
           ],
           generationConfig: {
@@ -66,7 +135,6 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
     setErrorMsg(null);
 
     try {
-      const base64Data = await fileToBase64(file);
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
       if (!apiKey) {
@@ -99,14 +167,35 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
         }
       `;
 
-      const mimeType = file.type || "application/pdf";
+      let parts;
+      if (pdfState === "unlocked" && unlockedDocRef.current) {
+        // PDF protegido: envia as páginas já desbloqueadas como imagens + o texto extraído
+        const { images, text, totalPages, sentPages } = await pdfToImages(unlockedDocRef.current);
+        const note = totalPages > sentPages
+          ? `
+Observação: a fatura tem ${totalPages} páginas; foram enviadas as ${sentPages} primeiras.`
+          : "";
+        parts = [
+          { text: promptText + note },
+          ...images.map((data) => ({ inline_data: { mime_type: "image/jpeg", data } })),
+          ...(text ? [{ text: `Texto extraído do PDF (use para conferir os números):
+${text}` }] : []),
+        ];
+      } else {
+        const base64Data = await fileToBase64(file);
+        parts = [
+          { text: promptText },
+          { inline_data: { mime_type: file.type || "application/pdf", data: base64Data } },
+        ];
+      }
+
       let response;
 
       try {
-        response = await callGeminiApi("gemini-3.8-flash", apiKey, promptText, base64Data, mimeType);
+        response = await callGeminiApi("gemini-3.8-flash", apiKey, parts);
         if (!response.ok) throw new Error(`Status ${response.status}`);
       } catch (primaryErr) {
-        response = await callGeminiApi("gemini-3.5-flash", apiKey, promptText, base64Data, mimeType);
+        response = await callGeminiApi("gemini-3.5-flash", apiKey, parts);
       }
 
       if (response.status === 429) {
@@ -278,11 +367,11 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
   const hasSurpass = result && result.demand_measured > result.demand_contracted;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-3 sm:p-6 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy/80 backdrop-blur-md p-3 sm:p-6 animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-100 flex flex-col max-h-[92vh]">
         
         {/* Cabeçalho Interativo */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-slate-800 to-sky-950 text-white">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-navy-gradient text-white">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-sky-500/20 rounded-xl border border-sky-400/30">
               <Sparkles className="h-5 w-5 text-sky-400" />
@@ -293,7 +382,8 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
             </div>
           </div>
           <button 
-            onClick={onClose} 
+            onClick={handleClose} 
+            aria-label="Fechar"
             className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-all"
           >
             <X className="h-5 w-5" />
@@ -316,13 +406,84 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
                 <span className="text-xs text-slate-400 mt-1 max-w-xs">A IA analisará a fatura do Grupo A extraindo demandas, multas e oportunidades do Mercado Livre</span>
                 
                 {file && (
-                  <div className="mt-4 px-4 py-2 bg-sky-500 text-white text-xs font-semibold rounded-xl flex items-center space-x-2 shadow-md shadow-sky-500/20">
-                    <FileText className="h-4 w-4" />
-                    <span>{file.name}</span>
+                  <div className="mt-4 max-w-full px-4 py-2 bg-sky-500 text-white text-xs font-semibold rounded-xl flex items-center space-x-2 shadow-md shadow-sky-500/20">
+                    {pdfState === "checking" ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> :
+                     pdfState === "locked" ? <Lock className="h-4 w-4 shrink-0" /> :
+                     pdfState === "unlocked" ? <Unlock className="h-4 w-4 shrink-0" /> :
+                     <FileText className="h-4 w-4 shrink-0" />}
+                    <span className="truncate">{file.name}</span>
                   </div>
                 )}
                 <input id="bill-file-input" type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={handleFileChange} className="hidden" />
               </label>
+
+              {/* PDF protegido por senha */}
+              {pdfState === "locked" && (
+                <form onSubmit={handleUnlock} className="p-4 sm:p-5 rounded-2xl border border-amber-200 bg-amber-50/60 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-xl bg-amber-100 text-amber-600 shrink-0">
+                      <Lock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">Esta fatura está protegida por senha</p>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        As distribuidoras costumam usar os <strong>5 primeiros dígitos do CPF ou CNPJ</strong> do titular.
+                        Se preferir, digite o documento completo: testamos as combinações mais comuns.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                      <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={passwordInput}
+                        onChange={(e) => { setPasswordInput(e.target.value); setUnlockError(null); }}
+                        placeholder="Senha ou CPF/CNPJ do titular"
+                        autoComplete="off"
+                        autoFocus
+                        className={`w-full pl-9 pr-10 py-2.5 bg-white border rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 ${
+                          unlockError ? "border-rose-300 focus:ring-rose-500/20" : "border-slate-200 focus:ring-sky-500/20 focus:border-sky-500"
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-600"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!passwordInput.trim() || unlocking}
+                      className="px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-all cursor-pointer whitespace-nowrap"
+                    >
+                      {unlocking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlock className="h-4 w-4" />}
+                      <span>{unlocking ? "Testando..." : "Desbloquear"}</span>
+                    </button>
+                  </div>
+
+                  {unlockError && (
+                    <p className="text-xs font-medium text-rose-600 flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      {unlockError}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-slate-500">
+                    🔒 A senha é usada só no seu navegador para abrir o arquivo. Ela não é enviada nem salva.
+                  </p>
+                </form>
+              )}
+
+              {pdfState === "unlocked" && (
+                <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-medium flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>PDF desbloqueado. As páginas serão enviadas à IA como imagens, sem a senha.</span>
+                </div>
+              )}
 
               {errorMsg && (
                 <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center space-x-3">
@@ -333,8 +494,8 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
 
               <button
                 onClick={handleAnalyze}
-                disabled={!file || loading}
-                className="w-full py-4 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-bold rounded-2xl disabled:opacity-50 flex items-center justify-center space-x-2 shadow-lg shadow-sky-500/25 transition-all cursor-pointer text-sm"
+                disabled={!file || loading || pdfState === "checking" || pdfState === "locked"}
+                className="w-full py-4 bg-brand-gradient hover:brightness-110 text-white font-bold rounded-2xl disabled:opacity-50 flex items-center justify-center space-x-2 shadow-lg shadow-sky-500/25 transition-all cursor-pointer text-sm"
               >
                 {loading ? (
                   <>
@@ -539,7 +700,7 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
 
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => { setFile(null); setResult(null); setErrorMsg(null); }}
+                onClick={resetFile}
                 className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-xl transition-all cursor-pointer"
               >
                 Nova Fatura
@@ -548,7 +709,7 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
               <button
                 onClick={() => {
                   if (onAnalysisComplete) onAnalysisComplete(result);
-                  onClose();
+                  handleClose();
                 }}
                 className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-xl shadow-md shadow-sky-500/20 transition-all cursor-pointer"
               >
