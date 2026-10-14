@@ -52,6 +52,9 @@ export async function POST(request) {
   // Harmônicas só quando o medidor enviar (exige a migração 0002 no banco)
   if (data.thd_current != null) row.thd_current = data.thd_current;
   if (data.thd_voltage != null) row.thd_voltage = data.thd_voltage;
+  // Energia e frequência do PZEM (exige a migração 0003 no banco)
+  if (data.energy_kwh != null) row.energy_kwh = data.energy_kwh;
+  if (data.frequency != null) row.frequency = data.frequency;
 
   if (!isPlausibleReading(row)) {
     // 200 para o ESP32 não ficar reenviando uma leitura corrompida
