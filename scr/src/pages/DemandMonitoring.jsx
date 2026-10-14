@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Sparkles, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import BillAnalyzer from "../components/BillAnalyzer";
+import { parseNumberBR } from "../lib/billParsing";
 
 const defaultHistory = [
   { month: "2024-08", demand: 700 },
@@ -49,8 +50,10 @@ export default function DemandMonitoring() {
 
   const handleAnalysisComplete = (data) => {
     if (data) {
-      if (data.demand_measured) setDemandActive(data.demand_measured);
-      if (data.demand_contracted) setDemandContracted(data.demand_contracted);
+      const measured = parseNumberBR(data.demand_measured);
+      const contracted = parseNumberBR(data.demand_contracted);
+      if (measured) setDemandActive(measured);
+      if (contracted) setDemandContracted(contracted);
     }
   };
 

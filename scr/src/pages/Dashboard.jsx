@@ -3,6 +3,7 @@ import { Gauge, Zap, Activity, Info, X, FileText } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import BillAnalyzer from "../components/BillAnalyzer";
 import { updateIndustryDataFromBill } from "../api/base44Client";
+import { parseNumberBR, normalizeMonth } from "../lib/billParsing";
 
 const initialDashboardData = {
   contractedDemand: 190,
@@ -23,14 +24,7 @@ const initialChartHistory = [
   { month: "2026-01", contratada: 190, medida: 225.46, consumo: 20450 },
 ];
 
-// Função utilitária para converter strings com vírgula ou números de forma segura
-const parseNum = (val, fallback = 0) => {
-  if (val === null || val === undefined) return fallback;
-  if (typeof val === "number") return isNaN(val) ? fallback : val;
-  const cleaned = String(val).replace(/\./g, "").replace(",", ".");
-  const parsed = parseFloat(cleaned);
-  return isNaN(parsed) ? fallback : parsed;
-};
+const HISTORY_MONTHS = 6;
 
 export default function Dashboard() {
   const [showAlert, setShowAlert] = useState(true);
@@ -45,15 +39,15 @@ export default function Dashboard() {
     // 1. Atualiza a camada base44 de dados
     updateIndustryDataFromBill(newBillData);
 
-    // 2. Extração garantida dos valores numéricos da fatura lida
-    const contracted = parseNum(newBillData.demand_contracted, metrics.contractedDemand);
-    const measured = parseNum(newBillData.demand_measured, metrics.activeDemand);
-    let rawConsumption = parseNum(newBillData.consumption_total, metrics.monthlyConsumption);
-    
-    // Ajusta unidade de consumo se a IA retornar em MWh
-    const consumptionInKWh = rawConsumption < 1000 ? Math.round(rawConsumption * 1000) : rawConsumption;
-    const pf = parseNum(newBillData.power_factor, metrics.powerFactor);
-    const refMonth = newBillData.reference_month || "02/2026";
+    // 2. Valores da fatura (aceita número ou texto no formato brasileiro).
+    // O prompt pede consumo em kWh: o valor é usado como veio.
+    const contracted = parseNumberBR(newBillData.demand_contracted, metrics.contractedDemand);
+    const measured = parseNumberBR(newBillData.demand_measured, metrics.activeDemand);
+    const consumptionInKWh = parseNumberBR(newBillData.consumption_total, metrics.monthlyConsumption);
+    const pf = parseNumberBR(newBillData.power_factor, metrics.powerFactor);
+    const suggested = parseNumberBR(newBillData.suggested_demand, null);
+    // Mês no formato do histórico (AAAA-MM); sem mês legível, usa o mês atual
+    const refMonth = normalizeMonth(newBillData.reference_month) || new Date().toISOString().slice(0, 7);
 
     // 3. Força a atualização do estado dos Cards de KPI
     setMetrics({
@@ -66,7 +60,8 @@ export default function Dashboard() {
         ? "Ultrapassagem de Demanda Detectada" 
         : "Fatura Processada com Sucesso",
       alertMessage: measured > contracted
-        ? `A demanda medida (${measured} kW) superou a contratada (${contracted} kW). Sugestão de readequação: ${newBillData.suggested_demand || 730} kW.`
+        ? `A demanda medida (${measured.toLocaleString("pt-BR")} kW) superou a contratada (${contracted.toLocaleString("pt-BR")} kW).` +
+          (suggested ? ` Sugestão de readequação: ${suggested.toLocaleString("pt-BR")} kW.` : "")
         : `Unidade Consumidora ${newBillData.uc || ''} analisada com sucesso.`
     });
 
@@ -81,14 +76,12 @@ export default function Dashboard() {
         consumo: consumptionInKWh
       };
 
-      const existingIndex = prevHistory.findIndex(item => item.month === refMonth);
-      if (existingIndex !== -1) {
-        const updated = [...prevHistory];
-        updated[existingIndex] = newEntry;
-        return updated;
-      }
-
-      return [...prevHistory.slice(1), newEntry];
+      // Substitui o mês se já existir; senão insere. Mantém ordem cronológica
+      // e só os últimos HISTORY_MONTHS meses.
+      const others = prevHistory.filter((item) => item.month !== refMonth);
+      return [...others, newEntry]
+        .sort((a, b) => a.month.localeCompare(b.month))
+        .slice(-HISTORY_MONTHS);
     });
   };
 
@@ -137,7 +130,7 @@ export default function Dashboard() {
           <div>
             <p className="text-xs font-medium text-slate-500">Demanda Contratada</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
-              {metrics.contractedDemand} <span className="text-sm font-normal text-slate-500">kW</span>
+              {metrics.contractedDemand.toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kW</span>
             </p>
           </div>
           <div className="p-2.5 bg-sky-50 text-sky-600 rounded-xl">
@@ -149,7 +142,7 @@ export default function Dashboard() {
           <div>
             <p className="text-xs font-medium text-slate-500">Demanda Ativa (Fatura)</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
-              {metrics.activeDemand} <span className="text-sm font-normal text-slate-500">kW</span>
+              {metrics.activeDemand.toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kW</span>
             </p>
           </div>
           <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
@@ -172,7 +165,7 @@ export default function Dashboard() {
         <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-medium text-slate-500">Fator de Potência</p>
-            <p className="text-2xl font-bold text-emerald-600 mt-1">{metrics.powerFactor.toFixed(2)}</p>
+            <p className={`text-2xl font-bold mt-1 ${metrics.powerFactor < 0.92 ? "text-amber-600" : "text-emerald-600"}`}>{metrics.powerFactor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
           <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
             <Activity className="h-5 w-5" />

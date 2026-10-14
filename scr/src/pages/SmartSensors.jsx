@@ -1,26 +1,16 @@
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../lib/supabase";
-import { Plus, Cpu, Zap, TrendingDown, Factory, Clock, X, Check, Building2, BarChart2, Activity, Gauge, Calendar } from "lucide-react";
+import { Plus, Cpu, Zap, TrendingDown, Factory, Clock, X, Check, Building2, BarChart2, Activity, Gauge, Calendar, Radio, Waves } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
+import {
+  wattsToKw, formatPower, formatReactive, reactiveKvar, apparentKva,
+  aggregateEnergy, isPlausibleReading,
+} from "../lib/electrical";
 
 const initialSectors = ["Escritório Técnico", "Usinagem", "Processos Térmicos"];
 
-const initialTelemetryHistory = {
-  1: [
-    { time: "08:00", power: 1.1, pf: 0.90, current: 5.4 },
-    { time: "10:00", power: 1.2, pf: 0.90, current: 5.4 },
-  ],
-};
-
-const mockCompareData = {
-  daily: [
-    { periodLabel: "Seg", totalEnergyKw: 12.4, avgPower: 1.1 },
-    { periodLabel: "Ter", totalEnergyKw: 14.2, avgPower: 1.2 },
-  ],
-  weekly: [],
-  monthly: []
-};
-
+// Equipamentos de exemplo. Os valores elétricos são substituídos pelas
+// leituras reais quando o sensor (sensorId) envia dados.
 const initialEquipments = [
   {
     id: 1,
@@ -33,8 +23,8 @@ const initialEquipments = [
     voltage: 220,
     current: 5.4,
     pf: 0.90,
-    thd: "18%",
     loadType: "Eletrônica / Não Linear",
+    sensorId: "ESP32_PZEM_01",
   },
   {
     id: 2,
@@ -47,8 +37,8 @@ const initialEquipments = [
     voltage: 220,
     current: 12.5,
     pf: 0.82,
-    thd: "4%",
     loadType: "Indutiva (Motor Monofásico)",
+    sensorId: "ESP32_PZEM_02",
   },
   {
     id: 3,
@@ -61,93 +51,89 @@ const initialEquipments = [
     voltage: 220,
     current: 20.4,
     pf: 0.99,
-    thd: "1.5%",
     loadType: "Resistiva Pura",
+    sensorId: "ESP32_PZEM_03",
   },
 ];
+
+// Pontos guardados por sensor para a curva ao vivo
+const LIVE_POINTS = 30;
+// Leituras buscadas para o histórico (as mais recentes)
+const HISTORY_LIMIT = 5000;
+
+const timeLabel = (iso) =>
+  new Date(iso || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+const toLivePoint = (row) => ({
+  time: timeLabel(row.created_at),
+  power: wattsToKw(row.power) ?? 0,
+  pf: row.power_factor ?? null,
+  current: row.current ?? null,
+});
+
+/** Aplica a leitura de um sensor ao equipamento correspondente. */
+const applyReading = (eq, row) => ({
+  ...eq,
+  powerKw: wattsToKw(row.power) ?? eq.powerKw,
+  voltage: row.voltage ?? eq.voltage,
+  current: row.current ?? eq.current,
+  pf: row.power_factor ?? eq.pf,
+  lastReadingAt: row.created_at,
+  measured: true,
+});
 
 export default function SmartSensors() {
   const [sectors, setSectors] = useState(initialSectors);
   const [equipments, setEquipments] = useState(initialEquipments);
-  const [telemetryHistory, setTelemetryHistory] = useState(initialTelemetryHistory);
-  
+  const [liveHistory, setLiveHistory] = useState({}); // sensorId -> pontos
+
   const [isEquipModalOpen, setIsEquipModalOpen] = useState(false);
   const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
-  const [selectedAnalysisEquip, setSelectedAnalysisEquip] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const selectedAnalysisEquip = equipments.find((e) => e.id === selectedId) || null;
 
   const [comparePeriod, setComparePeriod] = useState("daily");
-  const [historicalData, setHistoricalData] = useState([]);
+  const [historyRows, setHistoryRows] = useState([]);
+  const [historyState, setHistoryState] = useState("idle"); // idle | loading | ready | error
 
   const [name, setName] = useState("");
   const [sector, setSector] = useState(initialSectors[0]);
   const [cls, setCls] = useState("A");
   const [powerKw, setPowerKw] = useState("");
   const [dailyHours, setDailyHours] = useState("");
+  const [sensorIdInput, setSensorIdInput] = useState("");
 
   const [newSectorName, setNewSectorName] = useState("");
 
-  const parseSensorId = (sensorId) => {
-    if (sensorId === "ESP32_PZEM_01") return 1;
-    if (sensorId === "ESP32_PZEM_02") return 2;
-    if (sensorId === "ESP32_PZEM_03") return 3;
-    const parsed = Number(sensorId);
-    return isNaN(parsed) ? 1 : parsed;
-  };
-
   useEffect(() => {
-    // 1. Busca os últimos dados ao carregar a página
+    // 1. Últimas leituras ao abrir a página
     const fetchInitialTelemetry = async () => {
       try {
         const { data } = await supabase
           .from("measurements")
           .select("*")
           .order("created_at", { ascending: false })
-          .limit(20);
+          .limit(200);
 
-        if (data && data.length > 0) {
-          const historyMap = {};
-          
-          const latestRow = data[0];
-          const latestTargetId = parseSensorId(latestRow.sensor_id);
-          const latestKw = latestRow.power > 50 ? latestRow.power / 1000 : latestRow.power;
+        const rows = (data || []).filter(isPlausibleReading).reverse(); // ordem cronológica
+        if (!rows.length) return;
 
-          setEquipments((prev) =>
-            prev.map((eq) => {
-              if (eq.id === latestTargetId) {
-                return {
-                  ...eq,
-                  powerKw: latestKw ?? eq.powerKw,
-                  voltage: latestRow.voltage ?? eq.voltage,
-                  current: latestRow.current ?? eq.current,
-                  pf: latestRow.power_factor ?? eq.pf,
-                };
-              }
-              return eq;
-            })
-          );
+        const bySensor = {};
+        rows.forEach((row) => {
+          (bySensor[row.sensor_id] ||= []).push(row);
+        });
 
-          data.slice().reverse().forEach((row) => {
-            const eqId = parseSensorId(row.sensor_id);
-            if (!historyMap[eqId]) historyMap[eqId] = [];
-            
-            const timeStr = new Date(row.created_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            });
-
-            const kwVal = row.power > 50 ? row.power / 1000 : row.power;
-
-            historyMap[eqId].push({
-              time: timeStr,
-              power: kwVal ?? 0,
-              pf: row.power_factor ?? 1,
-              current: row.current ?? 0,
-            });
-          });
-
-          setTelemetryHistory((prev) => ({ ...prev, ...historyMap }));
-        }
+        setEquipments((prev) =>
+          prev.map((eq) => {
+            const list = bySensor[eq.sensorId];
+            return list ? applyReading(eq, list[list.length - 1]) : eq;
+          })
+        );
+        setLiveHistory(
+          Object.fromEntries(
+            Object.entries(bySensor).map(([id, list]) => [id, list.slice(-LIVE_POINTS).map(toLivePoint)])
+          )
+        );
       } catch (err) {
         console.error("Erro ao carregar telemetria:", err);
       }
@@ -155,67 +141,21 @@ export default function SmartSensors() {
 
     fetchInitialTelemetry();
 
-    // 2. Escuta novos INSERTs do Supabase em tempo real
+    // 2. Novas leituras em tempo real
     const channel = supabase
       .channel("esp32-realtime-measurements")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "measurements" },
         (payload) => {
-          const data = payload.new;
-          if (!data) return;
+          const row = payload.new;
+          if (!row || !isPlausibleReading(row)) return;
 
-          const targetId = parseSensorId(data.sensor_id);
-          const realKw = data.power > 50 ? data.power / 1000 : data.power;
-
-          // Atualiza lista principal
-          setEquipments((prev) =>
-            prev.map((eq) => {
-              if (eq.id === targetId) {
-                return {
-                  ...eq,
-                  powerKw: realKw ?? eq.powerKw,
-                  voltage: data.voltage ?? eq.voltage,
-                  current: data.current ?? eq.current,
-                  pf: data.power_factor ?? eq.pf,
-                };
-              }
-              return eq;
-            })
-          );
-
-          // Atualiza o modal aberto instantaneamente
-          setSelectedAnalysisEquip((prevModal) => {
-            if (prevModal && prevModal.id === targetId) {
-              return {
-                ...prevModal,
-                powerKw: realKw ?? prevModal.powerKw,
-                voltage: data.voltage ?? prevModal.voltage,
-                current: data.current ?? prevModal.current,
-                pf: data.power_factor ?? prevModal.pf,
-              };
-            }
-            return prevModal;
-          });
-
-          const timeStr = new Date(data.created_at || Date.now()).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          });
-
-          const newPoint = {
-            time: timeStr,
-            power: realKw ?? 0,
-            pf: data.power_factor ?? 1,
-            current: data.current ?? 0,
-          };
-
-          setTelemetryHistory((prev) => {
-            const currentHistory = prev[targetId] || [];
-            const updatedHistory = [...currentHistory, newPoint].slice(-10);
-            return { ...prev, [targetId]: updatedHistory };
-          });
+          setEquipments((prev) => prev.map((eq) => (eq.sensorId === row.sensor_id ? applyReading(eq, row) : eq)));
+          setLiveHistory((prev) => ({
+            ...prev,
+            [row.sensor_id]: [...(prev[row.sensor_id] || []), toLivePoint(row)].slice(-LIVE_POINTS),
+          }));
         }
       )
       .subscribe();
@@ -225,36 +165,38 @@ export default function SmartSensors() {
     };
   }, []);
 
+  // Histórico do sensor do equipamento aberto (busca uma vez por sensor;
+  // trocar o período só reagrupa os dados já carregados)
+  const selectedSensorId = selectedAnalysisEquip?.sensorId || null;
   useEffect(() => {
-    if (!selectedAnalysisEquip) return;
-
-    const fetchHistoricalData = async () => {
-      try {
-        const targetSensorStr = selectedAnalysisEquip.id === 1 ? "ESP32_PZEM_01" : String(selectedAnalysisEquip.id);
-
-        const { data } = await supabase
-          .from("measurements")
-          .select("*")
-          .eq("sensor_id", targetSensorStr)
-          .order("created_at", { ascending: true });
-
-        if (data && data.length > 0) {
-          const formatted = data.map((item) => ({
-            periodLabel: new Date(item.created_at).toLocaleDateString([], { month: "short", day: "numeric" }),
-            totalEnergyKw: item.power > 50 ? item.power / 1000 : item.power,
-            avgPower: item.power > 50 ? item.power / 1000 : item.power,
-          }));
-          setHistoricalData(formatted);
-        } else {
-          setHistoricalData(mockCompareData[comparePeriod]);
+    if (!selectedSensorId) {
+      setHistoryRows([]);
+      setHistoryState("idle");
+      return;
+    }
+    let cancelled = false;
+    setHistoryState("loading");
+    supabase
+      .from("measurements")
+      .select("created_at, power, voltage, current, power_factor")
+      .eq("sensor_id", selectedSensorId)
+      .order("created_at", { ascending: false })
+      .limit(HISTORY_LIMIT)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setHistoryState("error");
+          return;
         }
-      } catch (err) {
-        setHistoricalData(mockCompareData[comparePeriod]);
-      }
+        setHistoryRows(data || []);
+        setHistoryState("ready");
+      });
+    return () => {
+      cancelled = true;
     };
+  }, [selectedSensorId]);
 
-    fetchHistoricalData();
-  }, [selectedAnalysisEquip, comparePeriod]);
+  const historicalData = useMemo(() => aggregateEnergy(historyRows, comparePeriod), [historyRows, comparePeriod]);
 
   const activeCount = equipments.filter((e) => e.status === "Ativo").length;
   const totalPower = equipments.reduce((acc, curr) => acc + curr.powerKw, 0);
@@ -288,16 +230,17 @@ export default function SmartSensors() {
       dailyHours: parseFloat(dailyHours),
       status: "Ativo",
       voltage: 220,
-      current: ((parseFloat(powerKw) * 1000) / 220).toFixed(1),
+      current: Math.round(((parseFloat(powerKw) * 1000) / 220) * 10) / 10,
       pf: 0.92,
-      thd: "3.0%",
       loadType: "Geral",
+      sensorId: sensorIdInput.trim() || null,
     };
 
     setEquipments([...equipments, newEquip]);
     setName("");
     setPowerKw("");
     setDailyHours("");
+    setSensorIdInput("");
     setIsEquipModalOpen(false);
   };
 
@@ -369,7 +312,7 @@ export default function SmartSensors() {
           <div>
             <p className="text-xs font-medium text-slate-500">Potência Total</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
-              {totalPower.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} <span className="text-sm font-normal text-slate-500">kW</span>
+              {formatPower(totalPower)}
             </p>
           </div>
           <div className="p-2.5 bg-slate-100 text-slate-600 rounded-xl">
@@ -381,7 +324,7 @@ export default function SmartSensors() {
           <div>
             <p className="text-xs font-medium text-slate-500">Consumo Mensal Est.</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
-              {totalMonthlyConsumption.toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kWh</span>
+              {totalMonthlyConsumption.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} <span className="text-sm font-normal text-slate-500">kWh</span>
             </p>
           </div>
           <div className="p-2.5 bg-slate-100 text-slate-600 rounded-xl">
@@ -422,7 +365,7 @@ export default function SmartSensors() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {equipments.map((item) => {
-            const monthlyKw = (item.powerKw * item.dailyHours * 30).toLocaleString("pt-BR");
+            const monthlyKw = (item.powerKw * item.dailyHours * 30).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
             return (
               <div
                 key={item.id}
@@ -453,7 +396,20 @@ export default function SmartSensors() {
                       <span className="flex items-center gap-1.5">
                         <Zap className="h-3.5 w-3.5 text-slate-400" /> Potência
                       </span>
-                      <span className="font-semibold text-slate-800">{item.powerKw} kW</span>
+                      <span className="font-semibold text-slate-800">{formatPower(item.powerKw)}</span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="flex items-center gap-1.5">
+                        <Radio className="h-3.5 w-3.5 text-slate-400" /> Sensor
+                      </span>
+                      {item.sensorId ? (
+                        <span className={`font-semibold ${item.measured ? "text-emerald-600" : "text-slate-500"}`} title={item.measured ? `Última leitura: ${timeLabel(item.lastReadingAt)}` : "Sem leituras recebidas"}>
+                          {item.sensorId}{item.measured ? " • ao vivo" : " • sem dados"}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Não vinculado</span>
+                      )}
                     </div>
 
                     <div className="flex justify-between items-center">
@@ -476,7 +432,7 @@ export default function SmartSensors() {
                   </span>
 
                   <button
-                    onClick={() => setSelectedAnalysisEquip(item)}
+                    onClick={() => setSelectedId(item.id)}
                     className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <BarChart2 className="h-3.5 w-3.5" />
@@ -498,80 +454,122 @@ export default function SmartSensors() {
                 <div className="flex items-center gap-2">
                   <h3 className="text-xl font-bold text-slate-900">{selectedAnalysisEquip.name}</h3>
                   <span className="px-2.5 py-0.5 bg-sky-100 text-sky-700 text-xs font-semibold rounded-md">
-                    ESP32 PZEM-04T
+                    {selectedAnalysisEquip.sensorId || "Sem sensor"}
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
                   Setor: <span className="font-semibold">{selectedAnalysisEquip.sector}</span> | Tipo: <span className="font-semibold">{selectedAnalysisEquip.loadType}</span>
+                  {selectedAnalysisEquip.measured
+                    ? <> | Última leitura: <span className="font-semibold">{timeLabel(selectedAnalysisEquip.lastReadingAt)}</span></>
+                    : <> | <span className="font-semibold text-amber-600">valores de exemplo (sem leitura do sensor)</span></>}
                 </p>
               </div>
               <button
-                onClick={() => setSelectedAnalysisEquip(null)}
+                onClick={() => setSelectedId(null)}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
-                  <Gauge className="h-3 w-3 text-sky-500" /> Fator Potência
-                </p>
-                <p className={`text-lg font-bold mt-1 ${selectedAnalysisEquip.pf < 0.92 ? "text-amber-600" : "text-emerald-600"}`}>
-                  {selectedAnalysisEquip.pf}
-                </p>
-              </div>
+            {(() => {
+              const eq = selectedAnalysisEquip;
+              const q = reactiveKvar(eq.powerKw, eq.pf);
+              const sKva = apparentKva(eq.powerKw, eq.pf);
+              const monthlyCost = eq.powerKw * eq.dailyHours * 30 * 0.75;
+              return (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <p className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                        <Zap className="h-3 w-3 text-sky-500" /> Potência ativa
+                      </p>
+                      <p className="text-lg font-bold text-slate-900 mt-1">{formatPower(eq.powerKw)}</p>
+                    </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
-                  <Zap className="h-3 w-3 text-amber-500" /> Tensão / Corrente
-                </p>
-                <p className="text-sm font-bold text-slate-800 mt-1">
-                  {selectedAnalysisEquip.voltage}V / {selectedAnalysisEquip.current}A
-                </p>
-              </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <p className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                        <Gauge className="h-3 w-3 text-sky-500" /> Fator de potência
+                      </p>
+                      <p className={`text-lg font-bold mt-1 ${eq.pf < 0.92 ? "text-amber-600" : "text-emerald-600"}`}>
+                        {Number(eq.pf).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
-                  <Activity className="h-3 w-3 text-purple-500" /> Distorção (THD)
-                </p>
-                <p className="text-sm font-bold text-slate-800 mt-1">
-                  {selectedAnalysisEquip.thd}
-                </p>
-              </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <p className="text-[11px] font-medium text-slate-400 flex items-center gap-1" title="Calculada por Q = P · tan(acos FP). O PZEM-004T não mede reativa diretamente.">
+                        <Activity className="h-3 w-3 text-purple-500" /> Reativa (estimada)
+                      </p>
+                      <p className="text-lg font-bold text-slate-900 mt-1">{formatReactive(q)}</p>
+                      <p className="text-[10px] text-slate-400">S = {formatPower(sKva).replace("W", "VA")}</p>
+                    </div>
 
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
-                  <TrendingDown className="h-3 w-3 text-emerald-500" /> Custo Mensal Est.
-                </p>
-                <p className="text-sm font-bold text-slate-800 mt-1">
-                  R$ {((selectedAnalysisEquip.powerKw * selectedAnalysisEquip.dailyHours * 30) * 0.75).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-            </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <p className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                        <Zap className="h-3 w-3 text-amber-500" /> Tensão / Corrente
+                      </p>
+                      <p className="text-sm font-bold text-slate-800 mt-1">
+                        {Number(eq.voltage).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} V / {Number(eq.current).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} A
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 text-[11px]">
+                    <div className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-slate-500 flex items-start gap-1.5">
+                      <TrendingDown className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-px" />
+                      <span>
+                        Custo mensal estimado: <b className="text-slate-700">R$ {monthlyCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> ({eq.dailyHours} h/dia a R$ 0,75/kWh)
+                      </span>
+                    </div>
+                    <div className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-slate-500 flex items-start gap-1.5">
+                      <Waves className="h-3.5 w-3.5 text-purple-500 shrink-0 mt-px" />
+                      <span>
+                        Harmônicas (THD): <b className="text-slate-700">não medidas</b>. O PZEM-004T não tem essa medição.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div>
               <h4 className="text-sm font-bold text-slate-800 mb-1">Curva de Carga em Tempo Real</h4>
               <p className="text-xs text-slate-400 mb-4">Variação instantânea enviada pelo ESP32</p>
               
-              <div className="h-44 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={telemetryHistory[selectedAnalysisEquip.id] || telemetryHistory[1]}>
-                    <defs>
-                      <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#1a8cff" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#1a8cff" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="time" stroke="#64748b" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#64748b" fontSize={11} tickLine={false} />
-                    <Tooltip />
-                    <Area type="monotone" dataKey="power" name="Potência (kW)" stroke="#1a8cff" fillOpacity={1} fill="url(#colorPower)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              {(() => {
+                const points = liveHistory[selectedAnalysisEquip.sensorId] || [];
+                if (!selectedAnalysisEquip.sensorId || points.length === 0) {
+                  return (
+                    <div className="h-44 w-full rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-xs text-slate-400 text-center px-4">
+                      {selectedAnalysisEquip.sensorId
+                        ? `Nenhuma leitura recente de ${selectedAnalysisEquip.sensorId}. A curva aparece assim que o sensor enviar dados.`
+                        : "Vincule um sensor a este equipamento para ver a curva de carga."}
+                    </div>
+                  );
+                }
+                const inWatts = Math.max(...points.map((p) => p.power)) < 1;
+                const data = points.map((p) => ({ ...p, value: inWatts ? p.power * 1000 : p.power }));
+                const unit = inWatts ? "W" : "kW";
+                return (
+                  <div className="h-44 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={data}>
+                        <defs>
+                          <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#1a8cff" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#1a8cff" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="time" fontSize={11} tickLine={false} minTickGap={24} />
+                        <YAxis fontSize={11} tickLine={false} width={56} unit={` ${unit}`} />
+                        <Tooltip formatter={(v) => [`${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unit}`, "Potência"]} />
+                        <Area type="monotone" dataKey="value" name={`Potência (${unit})`} stroke="#1a8cff" fillOpacity={1} fill="url(#colorPower)" isAnimationActive={false} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="pt-4 border-t border-slate-100">
@@ -581,7 +579,7 @@ export default function SmartSensors() {
                     <Calendar className="h-4 w-4 text-sky-600" />
                     Análise e Comparação de Consumo
                   </h4>
-                  <p className="text-xs text-slate-400">Dados acumulados no Supabase</p>
+                  <p className="text-xs text-slate-400">Energia calculada a partir das leituras do sensor</p>
                 </div>
 
                 <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -612,36 +610,55 @@ export default function SmartSensors() {
                 </div>
               </div>
 
-              <div className="h-52 w-full mt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={historicalData} barSize={28}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="periodLabel" stroke="#64748b" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#64748b" fontSize={11} tickLine={false} />
-                    <Tooltip cursor={{ fill: "#f8fafc" }} />
-                    <Bar dataKey="totalEnergyKw" name="Consumo Acumulado (kWh)" fill="#1a8cff" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="avgPower" name="Média de Potência (kW)" fill="#2ee88a" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              {(() => {
+                const empty = (msg) => (
+                  <div className="h-52 w-full mt-2 rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-xs text-slate-400 text-center px-4">{msg}</div>
+                );
+                if (!selectedAnalysisEquip.sensorId) return empty("Sem sensor vinculado: não há histórico medido.");
+                if (historyState === "loading") return empty("Carregando leituras…");
+                if (historyState === "error") return empty("Não foi possível carregar o histórico. Tente abrir de novo.");
+                if (!historicalData.length) return empty(`Ainda não há leituras de ${selectedAnalysisEquip.sensorId}.`);
+                const inWh = Math.max(...historicalData.map((d) => d.energyKwh)) < 1;
+                const data = historicalData.map((d) => ({ ...d, energy: inWh ? d.energyKwh * 1000 : d.energyKwh }));
+                const eUnit = inWh ? "Wh" : "kWh";
+                return (
+                  <div className="h-52 w-full mt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data} barSize={28}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="periodLabel" fontSize={11} tickLine={false} />
+                        <YAxis fontSize={11} tickLine={false} width={64} unit={` ${eUnit}`} />
+                        <Tooltip
+                          formatter={(v, n, item) => [
+                            `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${eUnit} (potência média ${formatPower(item?.payload?.avgPowerKw)})`,
+                            "Energia",
+                          ]}
+                          labelFormatter={(l, p) => `${l} • ${p?.[0]?.payload?.samples ?? 0} leituras`}
+                        />
+                        <Bar dataKey="energy" name={`Energia (${eUnit})`} fill="#1a8cff" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="p-4 bg-sky-50/50 rounded-xl border border-sky-100 text-xs text-slate-600 space-y-1">
               <p className="font-semibold text-sky-900">Análise do Perfil Elétrico:</p>
               {selectedAnalysisEquip.pf < 0.92 ? (
                 <p className="text-amber-800">
-                  ⚠️ <strong>Atenção:</strong> Fator de potência medido ({selectedAnalysisEquip.pf}) está abaixo do limite regulatório de 0,92. É recomendável o dimensionamento de um banco de capacitores ou correção local.
+                  ⚠️ <strong>Atenção:</strong> Fator de potência {selectedAnalysisEquip.measured ? "medido" : "de exemplo"} ({Number(selectedAnalysisEquip.pf).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) está abaixo do limite regulatório de 0,92. É recomendável o dimensionamento de um banco de capacitores ou correção local.
                 </p>
               ) : (
                 <p className="text-emerald-800">
-                  ✅ <strong>Eficiência Elevada:</strong> O equipamento opera dentro da faixa ideal de fator de potência ({selectedAnalysisEquip.pf}), apresentando baixo desperdício por energia reativa.
+                  ✅ <strong>Eficiência Elevada:</strong> O equipamento opera dentro da faixa ideal de fator de potência ({Number(selectedAnalysisEquip.pf).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}), apresentando baixo desperdício por energia reativa.
                 </p>
               )}
             </div>
 
             <div className="flex justify-end pt-2 border-t border-slate-100">
               <button
-                onClick={() => setSelectedAnalysisEquip(null)}
+                onClick={() => setSelectedId(null)}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition-colors cursor-pointer"
               >
                 Fechar
@@ -739,6 +756,21 @@ export default function SmartSensors() {
                     required
                   />
                 </div>
+              </div>
+
+              <div>
+                <label htmlFor="equip-sensor-id" className="block text-xs font-medium text-slate-700 mb-1">
+                  ID do sensor (opcional)
+                </label>
+                <input
+                  id="equip-sensor-id"
+                  type="text"
+                  placeholder="Ex: ESP32_PZEM_04"
+                  value={sensorIdInput}
+                  onChange={(e) => setSensorIdInput(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">O mesmo identificador gravado no firmware do ESP32 (campo sensor_id).</p>
               </div>
 
               <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100">

@@ -150,12 +150,12 @@ export default function BillAnalyzer({ isOpen, onClose, onAnalysisComplete }) {
           "client_name": "Nome da empresa/cliente extraído ou Unidade Consumidora",
           "uc": "Número da UC ou Conta Contrato",
           "reference_month": "MM/AAAA",
-          "demand_contracted": 0.0,
-          "demand_measured": 0.0,
-          "demand_surpass": 0.0,
-          "consumption_total": 0.0,
-          "total_bill_value": 0.0,
-          "suggested_demand": 0.0,
+          "demand_contracted": 0.0 (kW),
+          "demand_measured": 0.0 (kW),
+          "demand_surpass": 0.0 (kW),
+          "consumption_total": 0.0 (kWh — some ponta e fora de ponta; converta MWh para kWh),
+          "total_bill_value": 0.0 (R$),
+          "suggested_demand": 0.0 (kW),
           "power_factor": 0.92,
           "insights": [
             {
