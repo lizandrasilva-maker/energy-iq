@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import Logo from "./Logo";
+import TransmissionBackdrop from "./TransmissionBackdrop";
 import { useTheme } from "@/lib/theme";
 
 const navItems = [
@@ -134,7 +135,11 @@ export default function Layout({ children }) {
       </aside>
 
       {/* Conteúdo principal */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="relative isolate flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Fundo: degradê da marca + linha de transmissão bem transparente */}
+        <div className="app-backdrop absolute inset-0 -z-10" aria-hidden="true" />
+        <TransmissionBackdrop className="app-towers absolute inset-x-0 bottom-0 h-[58%] w-full -z-10" />
+
         <header className="h-16 bg-white/80 backdrop-blur border-b border-slate-200/70 flex items-center justify-between gap-4 px-4 sm:px-8 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <button
