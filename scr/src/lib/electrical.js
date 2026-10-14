@@ -94,8 +94,21 @@ export function harmonicsFor(eq) {
 
 // Intervalo máximo entre duas leituras para considerar que o equipamento
 // esteve ligado no meio-tempo. Acima disso (sensor desligado, sem Wi-Fi) o
-// trecho não entra na conta de energia.
-const MAX_GAP_MS = 5 * 60 * 1000;
+// trecho não entra na conta de energia. O limite acompanha o ritmo do
+// próprio sensor: 3× o intervalo típico entre leituras, nunca menos de 5 min
+// (o firmware pode enviar a cada 3 s ou a cada 10 min).
+const MIN_GAP_MS = 5 * 60 * 1000;
+const GAP_FACTOR = 3;
+const MIN_GAPS_FOR_RHYTHM = 5; // com menos intervalos, o "típico" não é confiável
+
+function maxGapFor(points) {
+  const gaps = [];
+  for (let i = 1; i < points.length; i++) gaps.push(points[i].t - points[i - 1].t);
+  if (gaps.length < MIN_GAPS_FOR_RHYTHM) return MIN_GAP_MS;
+  gaps.sort((a, b) => a - b);
+  const median = gaps[Math.floor(gaps.length / 2)];
+  return Math.max(MIN_GAP_MS, median * GAP_FACTOR);
+}
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -122,8 +135,8 @@ function periodLabel(key, period) {
 /**
  * Agrupa leituras ({created_at, power em W}) por dia, semana ou mês.
  * A energia é a integral da potência no tempo (regra do trapézio entre
- * leituras consecutivas), em kWh. Trechos com intervalo maior que
- * MAX_GAP_MS são ignorados.
+ * leituras consecutivas), em kWh. Trechos com intervalo maior que o
+ * limite de maxGapFor() (sensor desligado ou sem conexão) são ignorados.
  *
  * @returns {{periodLabel: string, energyKwh: number, avgPowerKw: number, samples: number}[]}
  */
@@ -134,6 +147,7 @@ export function aggregateEnergy(rows, period = "daily") {
     .filter((p) => Number.isFinite(p.t) && p.kw !== null)
     .sort((a, b) => a.t - b.t);
 
+  const maxGap = maxGapFor(points);
   const groups = new Map();
   const group = (key) => {
     if (!groups.has(key)) groups.set(key, { energyKwh: 0, sumKw: 0, samples: 0 });
@@ -145,7 +159,7 @@ export function aggregateEnergy(rows, period = "daily") {
     g.sumKw += p.kw;
     g.samples += 1;
     const prev = points[i - 1];
-    if (prev && p.t - prev.t <= MAX_GAP_MS) {
+    if (prev && p.t - prev.t <= maxGap) {
       const hours = (p.t - prev.t) / 3_600_000;
       // O trecho é creditado ao período da leitura final
       g.energyKwh += ((prev.kw + p.kw) / 2) * hours;
