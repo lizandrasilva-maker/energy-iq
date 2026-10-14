@@ -6,10 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StatCard from "../components/StatCard";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  useChartTheme, AreaGradient, ChartTooltip, ChartLegend, axisProps, gridProps, lineCursor, barCursor, activeDot, formatMonth,
+} from "../components/charts/ChartKit";
+
 
 export default function MarketSimulation() {
   const [loading, setLoading] = useState(true);
+  const chart = useChartTheme();
 
   // Free market form
   const [freeMarket, setFreeMarket] = useState({
@@ -167,18 +172,26 @@ export default function MarketSimulation() {
                 </div>
                 <div className="bg-card border border-border rounded-xl p-5">
                   <h4 className="font-heading font-semibold text-sm mb-1">Comparativo Anual</h4>
-                  <p className="text-xs text-muted-foreground mb-4">Economia de {freeResult.savingsPercent}% com mercado livre</p>
+                  <p className="text-xs text-muted-foreground mb-4">Custo mensal em R$ · economia de {freeResult.savingsPercent}% com mercado livre</p>
                   <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={freeResult.comparison} barSize={16}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                      <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                      <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                      <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
-                      <Legend />
-                      <Bar dataKey="cativo" name="Mercado Cativo" fill="hsl(var(--chart-5))" radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="livre" name="Mercado Livre" fill="hsl(var(--chart-2))" radius={[3, 3, 0, 0]} />
+                    <BarChart data={freeResult.comparison} barGap={2} barCategoryGap="24%" margin={{ top: 14, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid {...gridProps(chart)} />
+                      <XAxis dataKey="month" {...axisProps(chart)} tickFormatter={(m) => m.replace("Mês ", "M")} />
+                      <YAxis {...axisProps(chart)} width={52} tickFormatter={(v) => `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil`} />
+                      <Tooltip
+                        cursor={barCursor(chart)}
+                        content={<ChartTooltip format={(v) => `R$ ${Number(v).toLocaleString("pt-BR")}`} />}
+                      />
+                      <Bar dataKey="cativo" name="Mercado cativo" fill={chart.series[0]} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="livre" name="Mercado livre" fill={chart.series[1]} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                  <ChartLegend
+                    items={[
+                      { label: "Mercado cativo", color: chart.series[0], kind: "bar" },
+                      { label: "Mercado livre", color: chart.series[1], kind: "bar" },
+                    ]}
+                  />
                 </div>
               </div>
             ) : (

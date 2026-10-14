@@ -3,6 +3,10 @@ import { supabase } from "../lib/supabase";
 import { Plus, Cpu, Zap, TrendingDown, Factory, Clock, X, Check, Building2, BarChart2, Activity, Gauge, Calendar, Radio, Waves } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import {
+  useChartTheme, AreaGradient, ChartTooltip, ChartLegend, axisProps, gridProps, lineCursor, barCursor, activeDot, formatMonth,
+} from "../components/charts/ChartKit";
+
+import {
   wattsToKw, formatPower, formatReactive, reactiveKvar, apparentKva,
   aggregateEnergy, isPlausibleReading, harmonicsFor, LOAD_TYPES,
 } from "../lib/electrical";
@@ -41,6 +45,7 @@ export default function SmartSensors() {
   const [sectors, setSectors] = useState(initialSectors);
   const [equipments, setEquipments] = useState(initialEquipments);
   const [liveHistory, setLiveHistory] = useState({}); // sensorId -> pontos
+  const chart = useChartTheme();
 
   const [isEquipModalOpen, setIsEquipModalOpen] = useState(false);
   const [isSectorModalOpen, setIsSectorModalOpen] = useState(false);
@@ -232,7 +237,7 @@ export default function SmartSensors() {
           <h1 className="text-2xl font-bold text-slate-900">Sensores Inteligentes</h1>
           <p className="text-sm text-slate-500">Monitoramento em tempo real de equipamentos e setores</p>
         </div>
-        
+
         <div className="flex w-full sm:w-auto items-center gap-3">
           <button
             onClick={() => setIsSectorModalOpen(true)}
@@ -306,12 +311,18 @@ export default function SmartSensors() {
 
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={sectorData} barSize={36}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="sector" stroke="#64748b" fontSize={12} tickLine={false} />
-              <YAxis stroke="#64748b" fontSize={12} tickLine={false} />
-              <Tooltip cursor={{ fill: "#f8fafc" }} />
-              <Bar dataKey="consumption" fill="#1a8cff" radius={[4, 4, 0, 0]} />
+            <BarChart data={sectorData} barCategoryGap="38%" margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <AreaGradient id="sens-setor" color={chart.series[0]} from={1} to={0.55} />
+              </defs>
+              <CartesianGrid {...gridProps(chart)} />
+              <XAxis dataKey="sector" {...axisProps(chart)} />
+              <YAxis {...axisProps(chart)} width={56} tickFormatter={(v) => v.toLocaleString("pt-BR")} />
+              <Tooltip
+                cursor={barCursor(chart)}
+                content={<ChartTooltip format={(v) => `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kWh/mês`} />}
+              />
+              <Bar dataKey="consumption" name="Consumo estimado" fill="url(#sens-setor)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -405,7 +416,7 @@ export default function SmartSensors() {
       {selectedAnalysisEquip && (
         <div className="fixed inset-0 z-50 bg-navy/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-100 space-y-6 animate-fadeIn max-h-[90vh] overflow-y-auto">
-            
+
             <div className="flex justify-between items-start border-b border-slate-100 pb-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -513,7 +524,7 @@ export default function SmartSensors() {
             <div>
               <h4 className="text-sm font-bold text-slate-800 mb-1">Curva de Carga em Tempo Real</h4>
               <p className="text-xs text-slate-400 mb-4">Variação instantânea enviada pelo ESP32</p>
-              
+
               {(() => {
                 const points = liveHistory[selectedAnalysisEquip.sensorId] || [];
                 if (!selectedAnalysisEquip.sensorId || points.length === 0) {
@@ -531,18 +542,27 @@ export default function SmartSensors() {
                 return (
                   <div className="h-44 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={data}>
+                      <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                         <defs>
-                          <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#1a8cff" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="#1a8cff" stopOpacity={0}/>
-                          </linearGradient>
+                          <AreaGradient id="sens-live" color={chart.series[0]} />
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="time" fontSize={11} tickLine={false} minTickGap={24} />
-                        <YAxis fontSize={11} tickLine={false} width={56} unit={` ${unit}`} />
-                        <Tooltip formatter={(v) => [`${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unit}`, "Potência"]} />
-                        <Area type="monotone" dataKey="value" name={`Potência (${unit})`} stroke="#1a8cff" fillOpacity={1} fill="url(#colorPower)" isAnimationActive={false} />
+                        <CartesianGrid {...gridProps(chart)} />
+                        <XAxis dataKey="time" {...axisProps(chart)} minTickGap={32} />
+                        <YAxis {...axisProps(chart)} width={60} unit={` ${unit}`} />
+                        <Tooltip
+                          cursor={lineCursor(chart)}
+                          content={<ChartTooltip format={(v) => `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unit}`} />}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="value"
+                          name="Potência ativa"
+                          stroke={chart.series[0]}
+                          strokeWidth={2}
+                          fill="url(#sens-live)"
+                          activeDot={activeDot(chart, chart.series[0])}
+                          isAnimationActive={false}
+                        />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -602,18 +622,24 @@ export default function SmartSensors() {
                 return (
                   <div className="h-52 w-full mt-2">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data} barSize={28}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="periodLabel" fontSize={11} tickLine={false} />
-                        <YAxis fontSize={11} tickLine={false} width={64} unit={` ${eUnit}`} />
+                      <BarChart data={data} barCategoryGap="35%" margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <defs>
+                          <AreaGradient id="sens-hist" color={chart.series[0]} from={1} to={0.55} />
+                        </defs>
+                        <CartesianGrid {...gridProps(chart)} />
+                        <XAxis dataKey="periodLabel" {...axisProps(chart)} />
+                        <YAxis {...axisProps(chart)} width={64} unit={` ${eUnit}`} />
                         <Tooltip
-                          formatter={(v, n, item) => [
-                            `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${eUnit} (potência média ${formatPower(item?.payload?.avgPowerKw)})`,
-                            "Energia",
-                          ]}
-                          labelFormatter={(l, p) => `${l} • ${p?.[0]?.payload?.samples ?? 0} leituras`}
+                          cursor={barCursor(chart)}
+                          content={
+                            <ChartTooltip
+                              labelFormat={(l, rows) => `${l} • ${rows?.[0]?.payload?.samples ?? 0} leituras`}
+                              format={(v) => `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${eUnit}`}
+                              extra={(d) => `Potência média: ${formatPower(d.avgPowerKw)}`}
+                            />
+                          }
                         />
-                        <Bar dataKey="energy" name={`Energia (${eUnit})`} fill="#1a8cff" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="energy" name="Energia" fill="url(#sens-hist)" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

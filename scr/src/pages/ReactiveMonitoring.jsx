@@ -1,24 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { 
-  AlertTriangle, 
-  X, 
-  Activity, 
-  Zap, 
-  TrendingDown, 
-  Calculator, 
-  PhoneCall, 
-  CheckCircle2 
+import {
+  AlertTriangle,
+  X,
+  Activity,
+  Zap,
+  TrendingDown,
+  Calculator,
+  PhoneCall,
+  CheckCircle2
 } from "lucide-react";
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  ReferenceLine 
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine
 } from "recharts";
+import {
+  useChartTheme, AreaGradient, ChartTooltip, ChartLegend, axisProps, gridProps, lineCursor, barCursor, activeDot, formatMonth,
+} from "../components/charts/ChartKit";
 import { supabase } from "../lib/supabase";
 import { pfSummary, capacitorKvar, formatPower, formatReactive, PF_MIN } from "../lib/electrical";
 import { initialEquipments } from "../data/plant";
@@ -47,6 +50,7 @@ const fpHistoryData = [
 
 export default function ReactiveMonitoring() {
   const [showAlert, setShowAlert] = useState(true);
+  const chart = useChartTheme();
 
   // Estados da Calculadora
   const [activePower, setActivePower] = useState("");
@@ -325,19 +329,28 @@ export default function ReactiveMonitoring() {
 
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={fpHistoryData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
-              <YAxis domain={[0.75, 1.0]} stroke="#94a3b8" fontSize={12} tickLine={false} />
-              <Tooltip cursor={{ stroke: "#f1f5f9" }} />
-              <ReferenceLine y={0.92} stroke="#dc2626" strokeDasharray="4 4" />
-              <Line 
-                type="monotone" 
-                dataKey="fp" 
-                stroke="#1a8cff" 
-                strokeWidth={2.5} 
-                dot={{ fill: "#1a8cff", r: 4 }} 
-                activeDot={{ r: 6 }} 
+            <LineChart data={fpHistoryData} margin={{ top: 16, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid {...gridProps(chart)} />
+              <XAxis dataKey="month" {...axisProps(chart)} />
+              <YAxis domain={[0.75, 1.0]} ticks={[0.75, 0.8, 0.85, 0.9, 0.95, 1]} {...axisProps(chart)} width={44} tickFormatter={(v) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} />
+              <Tooltip
+                cursor={lineCursor(chart)}
+                content={<ChartTooltip format={(v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} extra={(d) => (d.fp < 0.92 ? "Abaixo do mínimo: cobrança de reativo" : "Dentro do limite")} />}
+              />
+              <ReferenceLine
+                y={0.92}
+                stroke={chart.critical}
+                strokeDasharray="5 5"
+                label={{ value: "mínimo 0,92", fill: chart.axis, fontSize: 11, position: "insideTopRight" }}
+              />
+              <Line
+                type="monotone"
+                dataKey="fp"
+                name="Fator de potência"
+                stroke={chart.series[0]}
+                strokeWidth={2}
+                dot={{ r: 3, fill: chart.series[0], stroke: chart.surface, strokeWidth: 1.5 }}
+                activeDot={activeDot(chart, chart.series[0])}
               />
             </LineChart>
           </ResponsiveContainer>

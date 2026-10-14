@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Sparkles, Plus } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import {
+  useChartTheme, AreaGradient, ChartTooltip, ChartLegend, axisProps, gridProps, lineCursor, barCursor, activeDot, formatMonth,
+} from "../components/charts/ChartKit";
+
 import BillAnalyzer from "../components/BillAnalyzer";
 import { parseNumberBR } from "../lib/billParsing";
 
@@ -44,9 +48,12 @@ export default function DemandMonitoring() {
     ? Math.max(...chartData.map((item) => Number(item.demand) || 0)) 
     : 940;
 
+  // Ultrapassagem: demanda medida acima de 105% da contratada (tolerância de 5%, REN ANEEL 1.000/2021)
+  const surpassLimit = demandContracted * 1.05;
   const exceededCount = chartData && chartData.length > 0
-    ? chartData.filter((item) => (item.demand || 0) > demandContracted).length
+    ? chartData.filter((item) => (item.demand || 0) > surpassLimit).length
     : 0;
+  const chart = useChartTheme();
 
   const handleAnalysisComplete = (data) => {
     if (data) {
@@ -116,7 +123,7 @@ export default function DemandMonitoring() {
 
         <div className="p-5 bg-amber-50/30 rounded-2xl border border-amber-100 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500">Meses Excedidos</p>
+            <p className="text-xs font-medium text-slate-500" title="Demanda medida acima de 105% da contratada">Meses com Ultrapassagem</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
               {exceededCount} <span className="text-sm font-normal text-slate-500">de {chartData.length}</span>
             </p>
@@ -131,16 +138,44 @@ export default function DemandMonitoring() {
 
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
-              <YAxis domain={[0, 1000]} stroke="#94a3b8" fontSize={12} tickLine={false} />
-              <Tooltip cursor={{ fill: "#f8fafc" }} />
-              <ReferenceLine y={demandContracted} stroke="#ef4444" strokeDasharray="4 4" label={{ value: `Contratada: ${demandContracted} kW`, fill: "#ef4444", fontSize: 12, position: "top" }} />
-              <Bar dataKey="demand" fill="#1a8cff" radius={[2, 2, 0, 0]} />
+            <BarChart data={chartData} margin={{ top: 20, right: 8, left: 0, bottom: 0 }} barCategoryGap="22%">
+              <CartesianGrid {...gridProps(chart)} />
+              <XAxis dataKey="month" tickFormatter={formatMonth} {...axisProps(chart)} />
+              <YAxis {...axisProps(chart)} width={44} />
+              <Tooltip
+                cursor={barCursor(chart)}
+                content={
+                  <ChartTooltip
+                    labelFormat={formatMonth}
+                    format={(v) => `${Number(v).toLocaleString("pt-BR")} kW`}
+                    extra={(d) =>
+                      d.demand > surpassLimit
+                        ? `Ultrapassagem: ${(d.demand - demandContracted).toLocaleString("pt-BR")} kW acima da contratada`
+                        : "Dentro da tolerância de 5%"
+                    }
+                  />
+                }
+              />
+              <ReferenceLine
+                y={demandContracted}
+                stroke={chart.reference}
+                strokeDasharray="5 5"
+              />
+              <Bar dataKey="demand" name="Demanda medida" radius={[4, 4, 0, 0]}>
+                {chartData.map((d) => (
+                  <Cell key={d.month} fill={d.demand > surpassLimit ? chart.critical : chart.series[0]} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
+        <ChartLegend
+          items={[
+            { label: "Demanda medida", color: chart.series[0], kind: "bar" },
+            { label: "Ultrapassagem (acima de 105%)", color: chart.critical, kind: "bar" },
+            { label: `Contratada (${demandContracted.toLocaleString("pt-BR")} kW)`, color: chart.reference, kind: "dashed" },
+          ]}
+        />
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">

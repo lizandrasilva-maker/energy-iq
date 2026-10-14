@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Gauge, Zap, Activity, Info, X, FileText } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  useChartTheme, AreaGradient, ChartTooltip, ChartLegend, axisProps, gridProps, lineCursor, barCursor, activeDot, formatMonth,
+} from "../components/charts/ChartKit";
+import KpiCard from "../components/charts/KpiCard";
 import BillAnalyzer from "../components/BillAnalyzer";
 import { updateIndustryDataFromBill } from "../api/base44Client";
 import { parseNumberBR, normalizeMonth } from "../lib/billParsing";
@@ -32,6 +36,14 @@ export default function Dashboard() {
   
   const [metrics, setMetrics] = useState(initialDashboardData);
   const [history, setHistory] = useState(initialChartHistory);
+  const chart = useChartTheme();
+
+  /** Variação % do último mês do histórico em relação ao anterior. */
+  const monthDelta = (key) => {
+    if (history.length < 2) return null;
+    const prev = history[history.length - 2][key], last = history[history.length - 1][key];
+    return prev ? ((last - prev) / prev) * 100 : null;
+  };
 
   const handleAnalysisComplete = (newBillData) => {
     if (!newBillData) return;
@@ -125,90 +137,113 @@ export default function Dashboard() {
       )}
 
       {/* Cards de KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Demanda Contratada</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              {metrics.contractedDemand.toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kW</span>
-            </p>
-          </div>
-          <div className="p-2.5 bg-sky-50 text-sky-600 rounded-xl">
-            <Gauge className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Demanda Ativa (Fatura)</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              {metrics.activeDemand.toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kW</span>
-            </p>
-          </div>
-          <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
-            <Gauge className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Consumo (Fatura)</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              {metrics.monthlyConsumption.toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kWh</span>
-            </p>
-          </div>
-          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
-            <Zap className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Fator de Potência</p>
-            <p className={`text-2xl font-bold mt-1 ${metrics.powerFactor < 0.92 ? "text-amber-600" : "text-emerald-600"}`}>{metrics.powerFactor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-          </div>
-          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
-            <Activity className="h-5 w-5" />
-          </div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <KpiCard
+          label="Demanda Contratada"
+          value={metrics.contractedDemand.toLocaleString("pt-BR")}
+          unit="kW"
+          icon={Gauge}
+          note="Limite do contrato com a distribuidora"
+        />
+        <KpiCard
+          label="Demanda Ativa (Fatura)"
+          value={metrics.activeDemand.toLocaleString("pt-BR")}
+          unit="kW"
+          icon={Gauge}
+          spark={history}
+          sparkKey="medida"
+          sparkColor={chart.series[0]}
+          delta={monthDelta("medida")}
+        />
+        <KpiCard
+          label="Consumo (Fatura)"
+          value={metrics.monthlyConsumption.toLocaleString("pt-BR")}
+          unit="kWh"
+          icon={Zap}
+          spark={history}
+          sparkKey="consumo"
+          sparkColor={chart.series[1]}
+          delta={monthDelta("consumo")}
+        />
+        <KpiCard
+          label="Fator de Potência"
+          value={metrics.powerFactor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          icon={Activity}
+          gauge={metrics.powerFactor}
+        />
       </div>
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <div className="mb-6">
+          <div className="mb-4">
             <h2 className="text-base font-bold text-slate-900">Demanda Mensal</h2>
-            <p className="text-xs text-slate-500">Consumida vs Contratada (kW)</p>
+            <p className="text-xs text-slate-500">Medida vs contratada (kW)</p>
           </div>
 
-          <div className="h-72 w-full">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={history}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', borderColor: '#e2e8f0' }} />
-                <Area type="monotone" dataKey="medida" name="Demanda Medida" stroke="#1a8cff" fill="#1a8cff" fillOpacity={0.15} strokeWidth={2} />
-                <Area type="monotone" dataKey="contratada" name="Contratada" stroke="#f59e0b" fill="transparent" strokeWidth={2} strokeDasharray="4 4" />
+              <AreaChart data={history} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+                <defs>
+                  <AreaGradient id="dash-demanda" color={chart.series[0]} />
+                </defs>
+                <CartesianGrid {...gridProps(chart)} />
+                <XAxis dataKey="month" tickFormatter={formatMonth} {...axisProps(chart)} />
+                <YAxis {...axisProps(chart)} width={44} />
+                <Tooltip
+                  cursor={lineCursor(chart)}
+                  content={<ChartTooltip labelFormat={formatMonth} format={(v) => `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} kW`} />}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="medida"
+                  name="Demanda medida"
+                  stroke={chart.series[0]}
+                  strokeWidth={2}
+                  fill="url(#dash-demanda)"
+                  activeDot={activeDot(chart, chart.series[0])}
+                />
+                <Area
+                  type="stepAfter"
+                  dataKey="contratada"
+                  name="Contratada"
+                  stroke={chart.reference}
+                  strokeWidth={1.5}
+                  strokeDasharray="5 5"
+                  fill="transparent"
+                  activeDot={false}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          <ChartLegend
+            items={[
+              { label: "Demanda medida", color: chart.series[0], kind: "line" },
+              { label: "Contratada", color: chart.reference, kind: "dashed" },
+            ]}
+          />
         </div>
 
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <div className="mb-6">
+          <div className="mb-4">
             <h2 className="text-base font-bold text-slate-900">Consumo de Energia</h2>
             <p className="text-xs text-slate-500">Total mensal (kWh)</p>
           </div>
 
-          <div className="h-72 w-full">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={history}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', borderColor: '#e2e8f0' }} />
-                <Bar dataKey="consumo" name="Consumo (kWh)" fill="#1a8cff" radius={[6, 6, 0, 0]} />
+              <BarChart data={history} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="28%">
+                <defs>
+                  <AreaGradient id="dash-consumo" color={chart.series[0]} from={1} to={0.55} />
+                </defs>
+                <CartesianGrid {...gridProps(chart)} />
+                <XAxis dataKey="month" tickFormatter={formatMonth} {...axisProps(chart)} />
+                <YAxis {...axisProps(chart)} width={60} tickFormatter={(v) => v.toLocaleString("pt-BR")} />
+                <Tooltip
+                  cursor={barCursor(chart)}
+                  content={<ChartTooltip labelFormat={formatMonth} format={(v) => `${Number(v).toLocaleString("pt-BR")} kWh`} />}
+                />
+                <Bar dataKey="consumo" name="Consumo" fill="url(#dash-consumo)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
