@@ -4,7 +4,7 @@ import { Plus, Cpu, Zap, TrendingDown, Factory, Clock, X, Check, Building2, BarC
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import {
   wattsToKw, formatPower, formatReactive, reactiveKvar, apparentKva,
-  aggregateEnergy, isPlausibleReading,
+  aggregateEnergy, isPlausibleReading, harmonicsFor, LOAD_TYPES,
 } from "../lib/electrical";
 
 const initialSectors = ["Escritório Técnico", "Usinagem", "Processos Térmicos"];
@@ -78,6 +78,9 @@ const applyReading = (eq, row) => ({
   voltage: row.voltage ?? eq.voltage,
   current: row.current ?? eq.current,
   pf: row.power_factor ?? eq.pf,
+  // THD só existe se o medidor enviar (o PZEM-004T não mede harmônicas)
+  thdCurrent: row.thd_current ?? eq.thdCurrent ?? null,
+  thdVoltage: row.thd_voltage ?? eq.thdVoltage ?? null,
   lastReadingAt: row.created_at,
   measured: true,
 });
@@ -102,6 +105,7 @@ export default function SmartSensors() {
   const [powerKw, setPowerKw] = useState("");
   const [dailyHours, setDailyHours] = useState("");
   const [sensorIdInput, setSensorIdInput] = useState("");
+  const [loadTypeInput, setLoadTypeInput] = useState("Geral");
 
   const [newSectorName, setNewSectorName] = useState("");
 
@@ -232,7 +236,7 @@ export default function SmartSensors() {
       voltage: 220,
       current: Math.round(((parseFloat(powerKw) * 1000) / 220) * 10) / 10,
       pf: 0.92,
-      loadType: "Geral",
+      loadType: loadTypeInput,
       sensorId: sensorIdInput.trim() || null,
     };
 
@@ -241,6 +245,7 @@ export default function SmartSensors() {
     setPowerKw("");
     setDailyHours("");
     setSensorIdInput("");
+    setLoadTypeInput("Geral");
     setIsEquipModalOpen(false);
   };
 
@@ -521,12 +526,33 @@ export default function SmartSensors() {
                         Custo mensal estimado: <b className="text-slate-700">R$ {monthlyCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> ({eq.dailyHours} h/dia a R$ 0,75/kWh)
                       </span>
                     </div>
-                    <div className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-slate-500 flex items-start gap-1.5">
-                      <Waves className="h-3.5 w-3.5 text-purple-500 shrink-0 mt-px" />
-                      <span>
-                        Harmônicas (THD): <b className="text-slate-700">não medidas</b>. O PZEM-004T não tem essa medição.
-                      </span>
-                    </div>
+                    {(() => {
+                      const h = harmonicsFor(eq);
+                      const pct = (v) => `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} %`;
+                      return (
+                        <div className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-slate-500 flex items-start gap-1.5">
+                          <Waves className="h-3.5 w-3.5 text-purple-500 shrink-0 mt-px" />
+                          <span>
+                            Harmônicas (THD de corrente):{" "}
+                            {h.mode === "real" ? (
+                              <>
+                                <b className="text-slate-700">{h.thdCurrent !== null ? pct(h.thdCurrent) : "—"}</b>
+                                {h.thdVoltage !== null && <> · tensão <b className="text-slate-700">{pct(h.thdVoltage)}</b></>}{" "}
+                                <span className="ml-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-semibold">Medida</span>
+                              </>
+                            ) : (
+                              <>
+                                <b className="text-slate-700">~{pct(h.thdCurrent)}</b>{" "}
+                                <span className="ml-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold">Simulada</span>
+                                <span className="block mt-0.5">
+                                  Faixa típica {h.range[0]}–{h.range[1]} % para carga {eq.loadType || "Geral"} ({h.note}). Para o valor real é preciso um medidor de harmônicas; o PZEM-004T não mede.
+                                </span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -756,6 +782,23 @@ export default function SmartSensors() {
                     required
                   />
                 </div>
+              </div>
+
+              <div>
+                <label htmlFor="equip-load-type" className="block text-xs font-medium text-slate-700 mb-1">
+                  Tipo de carga
+                </label>
+                <select
+                  id="equip-load-type"
+                  value={loadTypeInput}
+                  onChange={(e) => setLoadTypeInput(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
+                >
+                  {LOAD_TYPES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">Usado para simular as harmônicas enquanto não houver medição real.</p>
               </div>
 
               <div>

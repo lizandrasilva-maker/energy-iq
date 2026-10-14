@@ -59,6 +59,39 @@ export function apparentKva(pKw, pf) {
   return p / f;
 }
 
+// ---------------------------------------------------------------------------
+// Harmônicas: dois modos
+//  - "real": a leitura traz THD medido (campos thd_current / thd_voltage, em %),
+//    vindo de um medidor que mede harmônicas. O PZEM-004T não mede.
+//  - "simulada": valor típico de THD de corrente para o tipo de carga.
+//    Serve para ilustrar o diagnóstico; não substitui medição.
+// Faixas típicas de THDi (referência técnica geral, confirmar com medição).
+// ---------------------------------------------------------------------------
+export const LOAD_PROFILES = {
+  "Resistiva Pura": { typical: 2, range: [0, 5], note: "aquecimento, resistências" },
+  "Indutiva (Motor Monofásico)": { typical: 6, range: [3, 10], note: "motor em partida direta" },
+  "Motor com Inversor de Frequência": { typical: 40, range: [30, 80], note: "inversor de 6 pulsos" },
+  "Eletrônica / Não Linear": { typical: 90, range: [70, 150], note: "fontes chaveadas sem PFC, TI" },
+  "Iluminação LED com PFC": { typical: 15, range: [10, 20], note: "drivers com correção de FP" },
+  Geral: { typical: 20, range: [10, 30], note: "carga mista" },
+};
+export const LOAD_TYPES = Object.keys(LOAD_PROFILES);
+
+const finiteOrNull = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+
+/**
+ * THD do equipamento: medido, se a última leitura trouxe o valor; senão,
+ * simulado pelo tipo de carga.
+ * @returns {{mode: "real", thdCurrent: number|null, thdVoltage: number|null}
+ *         | {mode: "simulada", thdCurrent: number, range: [number, number], note: string}}
+ */
+export function harmonicsFor(eq) {
+  const thdI = finiteOrNull(eq?.thdCurrent), thdV = finiteOrNull(eq?.thdVoltage);
+  if (thdI !== null || thdV !== null) return { mode: "real", thdCurrent: thdI, thdVoltage: thdV };
+  const profile = LOAD_PROFILES[eq?.loadType] || LOAD_PROFILES.Geral;
+  return { mode: "simulada", thdCurrent: profile.typical, range: profile.range, note: profile.note };
+}
+
 // Intervalo máximo entre duas leituras para considerar que o equipamento
 // esteve ligado no meio-tempo. Acima disso (sensor desligado, sem Wi-Fi) o
 // trecho não entra na conta de energia.
