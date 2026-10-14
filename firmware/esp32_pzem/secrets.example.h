@@ -6,6 +6,8 @@
 #define WIFI_SSID     "nome-da-rede"
 #define WIFI_PASSWORD "senha-da-rede"
 
-// Endpoint REST da tabela de medições e chave pública (anon/publishable)
-#define SUPABASE_URL  "https://SEU-PROJETO.supabase.co/rest/v1/measurements"
-#define SUPABASE_KEY  "chave-anon-ou-publishable"
+// Função da nova versão que recebe as medições (Vercel)
+#define API_URL       "https://energy-iq-tau.vercel.app/api/sensor"
+
+// Mesmo valor da variável DEVICE_TOKEN cadastrada na Vercel
+#define DEVICE_TOKEN  "cole-aqui-o-token-do-dispositivo"

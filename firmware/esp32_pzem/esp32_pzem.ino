@@ -1,16 +1,20 @@
 // =====================================================================
-// EnergyIQ — firmware ESP32 + PZEM-004T v3/v4 (versão 2)
+// EnergyIQ — firmware ESP32 + PZEM-004T v3/v4 (versão 2, NOVA VERSÃO)
 //
-// Base: código da equipe de 14/10/2026 (versão 1, grava direto no Supabase).
+// Base: código da equipe de 14/10/2026 (versão 1). A versão 1 continua no
+// protótipo ORIGINAL e grava no Supabase do original; esta versão 2 é da
+// nova versão do EnergyIQ e não mexe no original.
 // Mudanças da versão 2:
-//  - Senha do Wi-Fi e chave do Supabase saem do código para secrets.h
-//    (arquivo fora do Git; copie de secrets.example.h e preencha).
+//  - Envia para a função /api/sensor da nova versão (Vercel), que valida e
+//    grava no Supabase da nova versão. O dispositivo NÃO guarda chave do
+//    banco: se identifica com um token (x-device-token).
+//  - Senha do Wi-Fi e token ficam em secrets.h (fora do Git; copie de
+//    secrets.example.h e preencha).
 //  - Descarta as primeiras leituras após ligar: o PZEM devolveu lixo na
 //    1ª leitura em 03/10 e 13/10 (289 MW, 4607 V, FP 365).
 //  - Valida TODOS os valores pela faixa do PZEM e pela coerência P ≈ V·I·FP
 //    antes de enviar (antes só testava se a tensão era NaN).
-//  - Energia (kWh) e frequência (Hz) prontas para envio, desligadas até o
-//    banco ter as colunas (ver ENVIAR_ENERGIA_FREQ).
+//  - Envia também energia acumulada (kWh) e frequência (Hz).
 //  - Reconexão automática do Wi-Fi e tempo limite no HTTP.
 //
 // NÃO COMPILADO/TESTADO pela auditoria (sem Arduino IDE/hardware). Testar
@@ -24,7 +28,7 @@
 #include <WiFiClientSecure.h>
 #include <PZEM004Tv30.h>
 #include <ArduinoJson.h>
-#include "secrets.h"  // WIFI_SSID, WIFI_PASSWORD, SUPABASE_URL, SUPABASE_KEY
+#include "secrets.h"  // WIFI_SSID, WIFI_PASSWORD, API_URL, DEVICE_TOKEN
 
 // --- Sensor ---
 #define SENSOR_ID   "ESP32_PZEM_01"  // mesmo valor do campo sensorId no site (src/data/plant.js)
@@ -35,10 +39,10 @@
 const unsigned long SEND_INTERVAL_MS = 3000;  // 3 s (≈ 29 mil linhas/dia por sensor)
 const int LEITURAS_DESCARTADAS_NO_INICIO = 2;
 
-// Energia (kWh) e frequência (Hz): deixe 0 até rodar no banco a migração
-// supabase/migrations/0003_energia_frequencia.sql. Com 1 e sem as colunas,
-// o Supabase recusa TODAS as gravações (coluna inexistente).
-#define ENVIAR_ENERGIA_FREQ 0
+// Energia (kWh) e frequência (Hz). Exigem as colunas da migração
+// supabase/migrations/0003_energia_frequencia.sql no banco da nova versão;
+// sem elas a função responde erro 500 e nada é gravado (ponha 0 nesse caso).
+#define ENVIAR_ENERGIA_FREQ 1
 
 PZEM004Tv30 pzem(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
 
@@ -86,18 +90,16 @@ void setup() {
 
 void enviarLeitura(float v, float i, float p, float pf, float energia, float freq) {
   WiFiClientSecure client;
-  client.setInsecure();  // protótipo: não confere o certificado do Supabase
+  client.setInsecure();  // protótipo: não confere o certificado do servidor
 
   HTTPClient http;
   http.setTimeout(8000);
-  if (!http.begin(client, SUPABASE_URL)) {
+  if (!http.begin(client, API_URL)) {
     Serial.println("❌ Erro ao iniciar a conexão HTTPS!");
     return;
   }
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("apikey", SUPABASE_KEY);
-  http.addHeader("Authorization", String("Bearer ") + SUPABASE_KEY);
-  http.addHeader("Prefer", "return=minimal");
+  http.addHeader("x-device-token", DEVICE_TOKEN);
 
   JsonDocument doc;
   doc["sensor_id"]    = SENSOR_ID;
@@ -113,7 +115,9 @@ void enviarLeitura(float v, float i, float p, float pf, float energia, float fre
   String payload;
   serializeJson(doc, payload);
   int code = http.POST(payload);
-  if (code == 201 || code == 200) {
+  if (code == 401) {
+    Serial.println("❌ Token recusado (HTTP 401): confira DEVICE_TOKEN em secrets.h e na Vercel.");
+  } else if (code == 200 || code == 201) {
     Serial.printf("✅ Enviado (HTTP %d)\n", code);
   } else {
     Serial.printf("❌ Erro no envio (HTTP %d): %s\n", code, http.getString().c_str());
