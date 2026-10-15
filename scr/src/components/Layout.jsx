@@ -17,10 +17,11 @@ import {
 import Logo from "./Logo";
 import TransmissionBackdrop from "./TransmissionBackdrop";
 import { faturaReferencia } from "@/data/faturaReferencia";
-import { billXray } from "@/lib/billXray";
+import { semObra } from "@/lib/savings";
 
-// Valor evitável da fatura de referência (ultrapassagem + reativo)
-const evitavelRef = billXray(faturaReferencia).evitavel;
+// Economia sem obra na fatura de referência: média do histórico (contrato de
+// demanda) + reativo. Mesma base da tela "Onde economizar".
+const evitavelRef = semObra(faturaReferencia);
 import { useTheme } from "@/lib/theme";
 
 const navItems = [
@@ -28,7 +29,7 @@ const navItems = [
   { name: "Demanda", path: "/demanda", icon: Zap },
   { name: "Reativo", path: "/reativo", icon: Activity },
   { name: "Sensores", path: "/sensores", icon: Cpu },
-  { name: "Simulação", path: "/mercado-livre", icon: TrendingUp },
+  { name: "Onde economizar", path: "/onde-economizar", icon: TrendingUp },
   { name: "Fornecedores", path: "/prestadores", icon: Users },
   { name: "Documentos", path: "/documentos", icon: FileText },
   { name: "Configurações", path: "/configuracoes", icon: Settings },
@@ -137,7 +138,7 @@ export default function Layout({ children }) {
           <p className="mt-1 font-heading text-2xl font-bold text-gradient-brand">
             {evitavelRef.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
           </p>
-          <p className="text-[11px] text-white/40">por mês, evitável sem obra (fatura de referência)</p>
+          <p className="text-[11px] text-white/40">por mês, sem obra (média do histórico da fatura de referência)</p>
         </div>
       </aside>
 

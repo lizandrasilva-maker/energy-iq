@@ -5,7 +5,7 @@ import DemandMonitoring from "./pages/DemandMonitoring";
 import ReactiveMonitoring from "./pages/ReactiveMonitoring";
 import SmartSensors from "./pages/SmartSensors";
 import BillAnalyzer from "./components/BillAnalyzer";
-import MarketSimulation from "./pages/MarketSimulation";
+import Savings from "./pages/Savings";
 import IndustrySettings from "./pages/IndustrySettings";
 import ServiceProviders from "./pages/ServiceProviders";
 import Documents from "./pages/Documents";
@@ -21,7 +21,8 @@ export default function App() {
           <Route path="/reativo" element={<ReactiveMonitoring />} />
           <Route path="/sensores" element={<SmartSensors />} />
           <Route path="/faturas" element={<BillAnalyzer />} />
-          <Route path="/mercado-livre" element={<MarketSimulation />} />
+          <Route path="/onde-economizar" element={<Savings />} />
+          <Route path="/mercado-livre" element={<Navigate to="/onde-economizar" replace />} />
           <Route path="/configuracoes" element={<IndustrySettings />} />
           <Route path="/prestadores" element={<ServiceProviders />} />
           <Route path="/documentos" element={<Documents />} />

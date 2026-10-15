@@ -66,7 +66,7 @@ export default function BillXrayCard({ fatura }) {
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <div className="p-3.5 rounded-xl bg-rose-50/60 border border-rose-100">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-700">Evitável sem obra</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-700">Evitável sem obra nesta fatura</p>
           <p className="font-heading text-xl font-bold text-slate-900 tabular-nums mt-0.5">
             {brl(x.evitavel)} <span className="text-sm font-medium text-slate-500">({pct(x.pctEvitavel)})</span>
           </p>
