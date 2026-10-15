@@ -7,42 +7,24 @@ import {
 
 import BillAnalyzer from "../components/BillAnalyzer";
 import { parseNumberBR } from "../lib/billParsing";
+import { faturaReferencia as ref } from "../data/faturaReferencia";
+import DemandContractSimulator from "../components/DemandContractSimulator";
 
-const defaultHistory = [
-  { month: "2024-08", demand: 700 },
-  { month: "2025-09", demand: 780 },
-  { month: "2025-10", demand: 820 },
-  { month: "2025-11", demand: 880 },
-  { month: "2025-12", demand: 920 },
-  { month: "2026-01", demand: 890 },
-  { month: "2026-02", demand: 940 },
-  { month: "2026-03", demand: 860 },
-  { month: "2026-04", demand: 895 },
-  { month: "2026-05", demand: 910 },
-  { month: "2026-06", demand: 875 },
-  { month: "2026-07", demand: 830 },
-  { month: "2026-08", demand: 905 },
-];
-
-const readHistoryData = [
-  { month: "2026-08", demand: 905, consumption: "467.000", cost: "R$ 468.000", fp: 0.84, status: "Excedida" },
-  { month: "2026-07", demand: 830, consumption: "432.000", cost: "R$ 438.000", fp: 0.86, status: "OK" },
-  { month: "2026-06", demand: 875, consumption: "453.000", cost: "R$ 456.000", fp: 0.85, status: "Excedida" },
-  { month: "2026-05", demand: 910, consumption: "470.000", cost: "R$ 472.000", fp: 0.83, status: "Excedida" },
-  { month: "2026-04", demand: 895, consumption: "461.000", cost: "R$ 463.000", fp: 0.84, status: "Excedida" },
-  { month: "2026-03", demand: 860, consumption: "445.000", cost: "R$ 448.000", fp: 0.85, status: "Excedida" },
-  { month: "2026-02", demand: 940, consumption: "481.000", cost: "R$ 482.000", fp: 0.81, status: "Excedida" },
-  { month: "2026-01", demand: 890, consumption: "468.000", cost: "R$ 469.000", fp: 0.83, status: "Excedida" },
-  { month: "2025-12", demand: 920, consumption: "472.000", cost: "R$ 476.000", fp: 0.82, status: "Excedida" },
-  { month: "2025-11", demand: 870, consumption: "455.000", cost: "R$ 451.000", fp: 0.84, status: "Excedida" },
-  { month: "2025-10", demand: 820, consumption: "438.000", cost: "R$ 432.000", fp: 0.86, status: "OK" },
-];
+// Histórico real (13 meses) da fatura de referência, anonimizada
+const refHistory = ref.historico.map((h) => ({
+  month: h.mes,
+  demand: h.demandaForaPontaKw,
+  demandPonta: h.demandaPontaKw,
+  consumoForaPonta: h.consumoForaPontaKwh,
+  consumoPonta: h.consumoPontaKwh,
+}));
+const tarifaDemanda = ref.itens.find((i) => i.componente === "demanda").precoComTributos;
 
 export default function DemandMonitoring() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [demandContracted, setDemandContracted] = useState(850);
-  const [demandActive, setDemandActive] = useState(905);
-  const [chartData] = useState(defaultHistory);
+  const [demandContracted, setDemandContracted] = useState(ref.demandaContratadaKw);
+  const [demandActive, setDemandActive] = useState(ref.medicao.demandaForaPontaKw);
+  const [chartData] = useState(refHistory);
 
   const maxDemand = chartData && chartData.length > 0 
     ? Math.max(...chartData.map((item) => Number(item.demand) || 0)) 
@@ -95,7 +77,7 @@ export default function DemandMonitoring() {
           <div>
             <p className="text-xs font-medium text-slate-500">Demanda Contratada</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
-              {demandContracted} <span className="text-sm font-normal text-slate-500">kW</span>
+              {Number(demandContracted).toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kW</span>
             </p>
           </div>
           <div className="p-2.5 bg-sky-100/60 text-sky-600 rounded-xl">⚡</div>
@@ -103,9 +85,9 @@ export default function DemandMonitoring() {
 
         <div className="p-5 bg-rose-50/30 rounded-2xl border border-rose-100 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500">Demanda Ativa (Fatura)</p>
+            <p className="text-xs font-medium text-slate-500">Demanda Medida (Fatura)</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
-              {demandActive} <span className="text-sm font-normal text-slate-500">kW</span>
+              {Number(demandActive).toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kW</span>
             </p>
           </div>
           <div className="p-2.5 bg-rose-100/50 text-rose-500 rounded-xl">📈</div>
@@ -115,7 +97,7 @@ export default function DemandMonitoring() {
           <div>
             <p className="text-xs font-medium text-slate-500">Demanda Máxima</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">
-              {!isNaN(maxDemand) && maxDemand > 0 ? maxDemand : 940} <span className="text-sm font-normal text-slate-500">kW</span>
+              {(!isNaN(maxDemand) && maxDemand > 0 ? maxDemand : 0).toLocaleString("pt-BR")} <span className="text-sm font-normal text-slate-500">kW</span>
             </p>
           </div>
           <div className="p-2.5 bg-rose-100/50 text-rose-500 rounded-xl">📈</div>
@@ -134,7 +116,7 @@ export default function DemandMonitoring() {
 
       <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
         <h2 className="text-base font-bold text-slate-900">Demanda Mensal</h2>
-        <p className="text-xs text-slate-500 mb-6">Consumida vs Contratada</p>
+        <p className="text-xs text-slate-500 mb-6">Demanda medida fora de ponta vs contratada · fatura real anonimizada (13 meses)</p>
 
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -178,44 +160,50 @@ export default function DemandMonitoring() {
         />
       </div>
 
+      <DemandContractSimulator historico={ref.historico} contratoAtualKw={demandContracted} tarifaKw={tarifaDemanda} />
+
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Histórico de Leituras</h2>
+          <h2 className="text-base font-bold text-slate-900">Histórico de faturamento</h2>
+          <p className="text-xs text-slate-500">Como impresso na fatura de referência. Ultrapassagem = demanda medida acima de 105% da contratada.</p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
+          <table className="w-full text-left text-sm text-slate-600 min-w-[640px]">
             <thead className="bg-slate-50/50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-100">
               <tr>
                 <th className="px-6 py-3.5">Mês</th>
-                <th className="px-6 py-3.5 text-center">Demanda (kW)</th>
-                <th className="px-6 py-3.5 text-center">Consumo (kWh)</th>
-                <th className="px-6 py-3.5 text-center">Custo (R$)</th>
-                <th className="px-6 py-3.5 text-center">FP</th>
-                <th className="px-6 py-3.5 text-center">Status</th>
+                <th className="px-6 py-3.5 text-right">Demanda fora ponta (kW)</th>
+                <th className="px-6 py-3.5 text-right">Demanda ponta (kW)</th>
+                <th className="px-6 py-3.5 text-right">Consumo fora ponta (kWh)</th>
+                <th className="px-6 py-3.5 text-right">Consumo ponta (kWh)</th>
+                <th className="px-6 py-3.5 text-center">Situação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {readHistoryData.map((row, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="px-6 py-4 font-medium text-slate-900">{row.month}</td>
-                  <td className="px-6 py-4 text-center">{row.demand}</td>
-                  <td className="px-6 py-4 text-center">{row.consumption}</td>
-                  <td className="px-6 py-4 text-center">{row.cost}</td>
-                  <td className="px-6 py-4 text-center">{row.fp.toFixed(2)}</td>
-                  <td className="px-6 py-4 text-center">
-                    {row.status === "Excedida" ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-600 border border-rose-100">
-                        <span className="text-xs">⚠️</span> Excedida
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
-                        <span className="text-xs">✔</span> OK
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {[...chartData].reverse().map((row) => {
+                const over = row.demand > surpassLimit;
+                return (
+                  <tr key={row.month} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-6 py-3.5 font-medium text-slate-900">{formatMonth(row.month)}</td>
+                    <td className="px-6 py-3.5 text-right tabular-nums">{row.demand.toLocaleString("pt-BR")}</td>
+                    <td className="px-6 py-3.5 text-right tabular-nums">{row.demandPonta?.toLocaleString("pt-BR") ?? "—"}</td>
+                    <td className="px-6 py-3.5 text-right tabular-nums">{row.consumoForaPonta?.toLocaleString("pt-BR") ?? "—"}</td>
+                    <td className="px-6 py-3.5 text-right tabular-nums">{row.consumoPonta?.toLocaleString("pt-BR") ?? "—"}</td>
+                    <td className="px-6 py-3.5 text-center">
+                      {over ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-600 border border-rose-100">
+                          ⚠️ Ultrapassagem +{(row.demand - demandContracted).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} kW
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                          ✔ Dentro do contrato
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

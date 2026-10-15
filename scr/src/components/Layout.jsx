@@ -16,6 +16,11 @@ import {
 } from "lucide-react";
 import Logo from "./Logo";
 import TransmissionBackdrop from "./TransmissionBackdrop";
+import { faturaReferencia } from "@/data/faturaReferencia";
+import { billXray } from "@/lib/billXray";
+
+// Valor evitável da fatura de referência (ultrapassagem + reativo)
+const evitavelRef = billXray(faturaReferencia).evitavel;
 import { useTheme } from "@/lib/theme";
 
 const navItems = [
@@ -128,9 +133,11 @@ export default function Layout({ children }) {
         {/* Card de economia */}
         <div className="relative m-4 overflow-hidden rounded-2xl border border-brand-green/25 bg-glass/[0.04] p-4">
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-green/60 to-transparent" />
-          <p className="text-[11px] font-medium uppercase tracking-wider text-white/50">Economia estimada</p>
-          <p className="mt-1 font-heading text-2xl font-bold text-gradient-brand">R$ 12.450</p>
-          <p className="text-[11px] text-white/40">este mês</p>
+          <p className="text-[11px] font-medium uppercase tracking-wider text-white/50">Economia possível</p>
+          <p className="mt-1 font-heading text-2xl font-bold text-gradient-brand">
+            {evitavelRef.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+          </p>
+          <p className="text-[11px] text-white/40">por mês, evitável sem obra (fatura de referência)</p>
         </div>
       </aside>
 

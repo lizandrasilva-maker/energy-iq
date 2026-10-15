@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Gauge, Zap, Activity, Info, X, FileText } from "lucide-react";
+import { Gauge, Zap, Activity, Info, X, FileText, BadgeCheck } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
   useChartTheme, AreaGradient, ChartTooltip, ChartLegend, axisProps, gridProps, lineCursor, barCursor, activeDot, formatMonth,
@@ -8,27 +8,45 @@ import KpiCard from "../components/charts/KpiCard";
 import BillAnalyzer from "../components/BillAnalyzer";
 import { updateIndustryDataFromBill } from "../api/base44Client";
 import { parseNumberBR, normalizeMonth } from "../lib/billParsing";
+import { faturaReferencia as ref } from "../data/faturaReferencia";
+import { billXray, simularContratoDemanda } from "../lib/billXray";
+import BillXrayCard from "../components/BillXrayCard";
+
+// Base: fatura real (anonimizada) de indústria A4 Verde da Enel CE, 08/2024
+const refXray = billXray(ref);
+const refItem = (k) => ref.itens.filter((i) => i.componente === k).reduce((t, i) => t + i.valor, 0);
+const refSim = simularContratoDemanda(
+  ref.historico,
+  ref.demandaContratadaKw,
+  ref.itens.find((i) => i.componente === "demanda").precoComTributos
+);
 
 const initialDashboardData = {
-  contractedDemand: 190,
-  activeDemand: 225.46,
-  monthlyConsumption: 20450,
-  powerFactor: 0.92,
-  companyName: "COMPACTO PRÉ MOLDE IND CERAMICA LTDA",
-  alertTitle: "Ultrapassagem de Demanda Detectada",
-  alertMessage: "A demanda medida (225,46 kW) ultrapassou a demanda contratada de 190,00 kW em 35,46 kW no mês de 01/2026. Recomendação: readequar para 230 kW.",
+  contractedDemand: ref.demandaContratadaKw,
+  activeDemand: ref.medicao.demandaForaPontaKw,
+  monthlyConsumption: ref.medicao.energiaForaPontaKwh + ref.medicao.energiaPontaKwh,
+  reactiveCost: refItem("reativo"),
+  companyName: `${ref.cliente} · ${ref.subgrupo} ${ref.modalidade} · ${ref.distribuidora} · fatura ${ref.referencia.split("-").reverse().join("/")}`,
+  isReference: true,
+  alertTitle: "Ultrapassagem de demanda em todos os 13 meses do histórico",
+  alertMessage:
+    `Contrato de ${ref.demandaContratadaKw} kW para uma demanda medida entre ${Math.min(...ref.historico.map((h) => h.demandaForaPontaKw)).toLocaleString("pt-BR")} e ` +
+    `${Math.max(...ref.historico.map((h) => h.demandaForaPontaKw)).toLocaleString("pt-BR")} kW. Só neste mês a multa de ultrapassagem foi de ` +
+    `${refItem("ultrapassagem").toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}. ` +
+    `Contratar ${refSim.otimo.contratoKw} kW reduziria o custo de demanda em ` +
+    `${refSim.economia.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })} nos ${refSim.meses} meses.`,
 };
 
-const initialChartHistory = [
-  { month: "2025-08", contratada: 190, medida: 185, consumo: 19500 },
-  { month: "2025-09", contratada: 190, medida: 188, consumo: 20100 },
-  { month: "2025-10", contratada: 190, medida: 192, consumo: 21000 },
-  { month: "2025-11", contratada: 190, medida: 210, consumo: 22000 },
-  { month: "2025-12", contratada: 190, medida: 228.97, consumo: 23500 },
-  { month: "2026-01", contratada: 190, medida: 225.46, consumo: 20450 },
-];
+const initialChartHistory = ref.historico.map((h) => ({
+  month: h.mes,
+  contratada: ref.demandaContratadaKw,
+  medida: h.demandaForaPontaKw,
+  consumo: h.consumoForaPontaKwh + h.consumoPontaKwh,
+  consumoForaPonta: h.consumoForaPontaKwh,
+  consumoPonta: h.consumoPontaKwh,
+}));
 
-const HISTORY_MONTHS = 6;
+const HISTORY_MONTHS = 13;
 
 export default function Dashboard() {
   const [showAlert, setShowAlert] = useState(true);
@@ -56,7 +74,6 @@ export default function Dashboard() {
     const contracted = parseNumberBR(newBillData.demand_contracted, metrics.contractedDemand);
     const measured = parseNumberBR(newBillData.demand_measured, metrics.activeDemand);
     const consumptionInKWh = parseNumberBR(newBillData.consumption_total, metrics.monthlyConsumption);
-    const pf = parseNumberBR(newBillData.power_factor, metrics.powerFactor);
     const suggested = parseNumberBR(newBillData.suggested_demand, null);
     // Mês no formato do histórico (AAAA-MM); sem mês legível, usa o mês atual
     const refMonth = normalizeMonth(newBillData.reference_month) || new Date().toISOString().slice(0, 7);
@@ -66,8 +83,9 @@ export default function Dashboard() {
       contractedDemand: contracted,
       activeDemand: measured,
       monthlyConsumption: consumptionInKWh,
-      powerFactor: pf,
+      reactiveCost: null,
       companyName: newBillData.client_name || metrics.companyName,
+      isReference: false,
       alertTitle: measured > contracted 
         ? "Ultrapassagem de Demanda Detectada" 
         : "Fatura Processada com Sucesso",
@@ -85,7 +103,9 @@ export default function Dashboard() {
         month: refMonth,
         contratada: contracted,
         medida: measured,
-        consumo: consumptionInKWh
+        consumo: consumptionInKWh,
+        consumoForaPonta: consumptionInKWh,
+        consumoPonta: 0,
       };
 
       // Substitui o mês se já existir; senão insere. Mantém ordem cronológica
@@ -103,7 +123,14 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Painel de Gestão Energética</h1>
-          <p className="text-sm text-slate-500 font-medium">{metrics.companyName}</p>
+          <p className="text-sm text-slate-500 font-medium flex flex-wrap items-center gap-2">
+            {metrics.companyName}
+            {metrics.isReference && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200" title="Números de uma fatura real de indústria, sem dados que identifiquem a empresa (LGPD)">
+                <BadgeCheck className="h-3.5 w-3.5" /> fatura real anonimizada
+              </span>
+            )}
+          </p>
         </div>
 
         <button
@@ -117,9 +144,9 @@ export default function Dashboard() {
 
       {/* Alerta Dinâmico */}
       {showAlert && (
-        <div className="p-4 bg-slate-100 border border-slate-200 rounded-2xl flex items-center justify-between shadow-sm">
+        <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl flex items-center justify-between gap-3 shadow-sm">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-slate-200 rounded-xl text-slate-700">
+            <div className="p-2 bg-amber-100 rounded-xl text-amber-700 shrink-0">
               <Info className="h-5 w-5" />
             </div>
             <div>
@@ -146,7 +173,7 @@ export default function Dashboard() {
           note="Limite do contrato com a distribuidora"
         />
         <KpiCard
-          label="Demanda Ativa (Fatura)"
+          label="Demanda Medida (Fatura)"
           value={metrics.activeDemand.toLocaleString("pt-BR")}
           unit="kW"
           icon={Gauge}
@@ -166,19 +193,30 @@ export default function Dashboard() {
           delta={monthDelta("consumo")}
         />
         <KpiCard
-          label="Fator de Potência"
-          value={metrics.powerFactor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          label="Reativo Excedente"
+          value={
+            metrics.reactiveCost != null
+              ? metrics.reactiveCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+              : "não informado"
+          }
           icon={Activity}
-          gauge={metrics.powerFactor}
+          note={
+            metrics.reactiveCost != null
+              ? "Cobrado por fator de potência abaixo de 0,92 (avaliado hora a hora). Some com correção do FP."
+              : "A leitura da fatura ainda não separa o reativo."
+          }
         />
       </div>
+
+      {/* Raio-x da fatura */}
+      <BillXrayCard fatura={ref} />
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="mb-4">
             <h2 className="text-base font-bold text-slate-900">Demanda Mensal</h2>
-            <p className="text-xs text-slate-500">Medida vs contratada (kW)</p>
+            <p className="text-xs text-slate-500">Demanda medida fora de ponta vs contratada (kW)</p>
           </div>
 
           <div className="h-64 w-full">
@@ -227,26 +265,30 @@ export default function Dashboard() {
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="mb-4">
             <h2 className="text-base font-bold text-slate-900">Consumo de Energia</h2>
-            <p className="text-xs text-slate-500">Total mensal (kWh)</p>
+            <p className="text-xs text-slate-500">Total mensal por posto tarifário (kWh)</p>
           </div>
 
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={history} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="28%">
-                <defs>
-                  <AreaGradient id="dash-consumo" color={chart.series[0]} from={1} to={0.55} />
-                </defs>
                 <CartesianGrid {...gridProps(chart)} />
                 <XAxis dataKey="month" tickFormatter={formatMonth} {...axisProps(chart)} />
-                <YAxis {...axisProps(chart)} width={60} tickFormatter={(v) => v.toLocaleString("pt-BR")} />
+                <YAxis {...axisProps(chart)} width={68} tickFormatter={(v) => v.toLocaleString("pt-BR")} />
                 <Tooltip
                   cursor={barCursor(chart)}
-                  content={<ChartTooltip labelFormat={formatMonth} format={(v) => `${Number(v).toLocaleString("pt-BR")} kWh`} />}
+                  content={<ChartTooltip labelFormat={formatMonth} format={(v) => `${Number(v).toLocaleString("pt-BR")} kWh`} extra={(d) => `Total: ${d.consumo.toLocaleString("pt-BR")} kWh`} />}
                 />
-                <Bar dataKey="consumo" name="Consumo" fill="url(#dash-consumo)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="consumoForaPonta" name="Fora de ponta" stackId="c" fill={chart.series[0]} />
+                <Bar dataKey="consumoPonta" name="Ponta" stackId="c" fill={chart.series[1]} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <ChartLegend
+            items={[
+              { label: "Fora de ponta", color: chart.series[0], kind: "bar" },
+              { label: "Ponta (17h30–20h30)", color: chart.series[1], kind: "bar" },
+            ]}
+          />
         </div>
       </div>
 

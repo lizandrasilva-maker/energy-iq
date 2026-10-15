@@ -25,28 +25,13 @@ import {
 import { fetchRecent } from "../lib/telemetry";
 import { pfSummary, capacitorKvar, formatPower, formatReactive, PF_MIN } from "../lib/electrical";
 import { initialEquipments } from "../data/plant";
+import { faturaReferencia as ref } from "../data/faturaReferencia";
 
 // Janela analisada por sensor: as 24 h que terminam na última leitura dele
 const WINDOW_MS = 24 * 3600 * 1000;
 const fmtPf = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtTime = (iso) =>
   new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-
-// Dados para o gráfico de evolução do Fator de Potência
-const fpHistoryData = [
-  { month: "Ago/25", fp: 0.88 },
-  { month: "Set/25", fp: 0.86 },
-  { month: "Out/25", fp: 0.84 },
-  { month: "Nov/25", fp: 0.82 },
-  { month: "Dez/25", fp: 0.83 },
-  { month: "Jan/26", fp: 0.81 },
-  { month: "Fev/26", fp: 0.85 },
-  { month: "Mar/26", fp: 0.84 },
-  { month: "Abr/26", fp: 0.83 },
-  { month: "Mai/26", fp: 0.85 },
-  { month: "Jun/26", fp: 0.86 },
-  { month: "Jul/26", fp: 0.84 },
-];
 
 export default function ReactiveMonitoring() {
   const [showAlert, setShowAlert] = useState(true);
@@ -171,8 +156,8 @@ export default function ReactiveMonitoring() {
                 {lowPf.length === 1 ? "1 setor" : `${lowPf.length} setores`} com fator de potência abaixo de 0,92
               </p>
               <p className="text-amber-700/90 text-xs mt-0.5">
-                {lowPf.map((s) => `${s.eq.sector} (FP ${fmtPf(s.pf)})`).join(" · ")}. Esses setores aumentam o
-                reativo excedente cobrado na fatura. Veja abaixo quanto de capacitor cada um precisa.
+                {lowPf.map((s) => `${s.eq.sector} (FP ${fmtPf(s.pf)})`).join(" · ")}. {lowPf.length === 1 ? "Esse setor aumenta" : "Esses setores aumentam"} o
+                reativo excedente cobrado na fatura. Veja abaixo quanto de capacitor {lowPf.length === 1 ? "ele precisa" : "cada um precisa"}.
               </p>
             </div>
           </div>
@@ -262,96 +247,44 @@ export default function ReactiveMonitoring() {
         )}
       </div>
 
-      {/* Cards de Indicadores (fatura) */}
-      <div className="flex items-baseline justify-between gap-2 pt-2">
-        <h2 className="text-base font-bold text-slate-900">Reativo na fatura</h2>
-        <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-          dados de exemplo
-        </span>
-      </div>
-      <p className="text-xs text-slate-500 -mt-4">
-        Estes números passam a ser reais quando o histórico de faturas for salvo (Etapa 2 do plano).
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-5 bg-amber-50/30 rounded-2xl border border-amber-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Fator de Potência Médio</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">0.84</p>
-          </div>
-          <div className="p-2.5 bg-amber-100/60 text-amber-600 rounded-xl">
-            <Activity className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-5 bg-amber-50/30 rounded-2xl border border-amber-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Meses com FP Baixo</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              12 <span className="text-sm font-normal text-slate-500">de 12</span>
+      {/* Reativo na fatura de referência (real, anonimizada) */}
+      {(() => {
+        const itens = ref.itens.filter((i) => i.componente === "reativo");
+        const valor = itens.reduce((t, i) => t + i.valor, 0);
+        const fp = itens.find((i) => /fora/i.test(i.descricao));
+        const p = itens.find((i) => !/fora/i.test(i.descricao));
+        const pctConta = valor / ref.subtotalFaturamento;
+        const brl = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+        const cards = [
+          { label: "Valor cobrado no mês", value: brl(valor), note: `${(pctConta * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% da conta de energia` },
+          { label: "Excedente fora de ponta", value: `${fp.quantidade.toLocaleString("pt-BR")} kVArh`, note: brl(fp.valor) },
+          { label: "Excedente na ponta", value: `${p.quantidade.toLocaleString("pt-BR")} kVArh`, note: brl(p.valor) },
+          { label: "Por ano, se repetir", value: brl(valor * 12), note: "Estimativa simples: 12 × o mês" },
+        ];
+        return (
+          <>
+            <div className="flex flex-wrap items-baseline justify-between gap-2 pt-2">
+              <h2 className="text-base font-bold text-slate-900">Reativo na fatura</h2>
+              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                fatura real anonimizada · {ref.referencia.split("-").reverse().join("/")}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 -mt-4">
+              Indústria {ref.subgrupo} {ref.modalidade} da {ref.distribuidora}. O excedente é apurado hora a hora quando o fator de
+              potência fica abaixo de 0,92, por isso aparece mesmo em meses com FP médio alto.
             </p>
-          </div>
-          <div className="p-2.5 bg-amber-100/60 text-amber-600 rounded-xl">
-            <Activity className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Último Reativo</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              111000 <span className="text-sm font-normal text-slate-500">kVArh</span>
-            </p>
-          </div>
-          <div className="p-2.5 bg-slate-200/60 text-slate-600 rounded-xl">
-            <Zap className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-5 bg-rose-50/40 rounded-2xl border border-rose-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Último FP</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">0.84</p>
-          </div>
-          <div className="p-2.5 bg-rose-100/60 text-rose-500 rounded-xl">
-            <TrendingDown className="h-5 w-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Gráfico de Evolução do Fator de Potência */}
-      <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
-        <h2 className="text-base font-bold text-slate-900">Evolução do Fator de Potência</h2>
-        <p className="text-xs text-slate-500 mb-6">Mínimo recomendado: 0,92</p>
-
-        <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={fpHistoryData} margin={{ top: 16, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid {...gridProps(chart)} />
-              <XAxis dataKey="month" {...axisProps(chart)} />
-              <YAxis domain={[0.75, 1.0]} ticks={[0.75, 0.8, 0.85, 0.9, 0.95, 1]} {...axisProps(chart)} width={44} tickFormatter={(v) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} />
-              <Tooltip
-                cursor={lineCursor(chart)}
-                content={<ChartTooltip format={(v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} extra={(d) => (d.fp < 0.92 ? "Abaixo do mínimo: cobrança de reativo" : "Dentro do limite")} />}
-              />
-              <ReferenceLine
-                y={0.92}
-                stroke={chart.critical}
-                strokeDasharray="5 5"
-                label={{ value: "mínimo 0,92", fill: chart.axis, fontSize: 11, position: "insideTopRight" }}
-              />
-              <Line
-                type="monotone"
-                dataKey="fp"
-                name="Fator de potência"
-                stroke={chart.series[0]}
-                strokeWidth={2}
-                dot={{ r: 3, fill: chart.series[0], stroke: chart.surface, strokeWidth: 1.5 }}
-                activeDot={activeDot(chart, chart.series[0])}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              {cards.map((c) => (
+                <div key={c.label} className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{c.label}</p>
+                  <p className="font-heading text-2xl font-bold text-slate-900 mt-1 tabular-nums">{c.value}</p>
+                  <p className="text-xs text-slate-500 mt-1">{c.note}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       {/* CALCULADORA DE BANCO DE CAPACITORES (POSICIONADA LOGO ABAIXO DO GRÁFICO) */}
       <div id="simulador-capacitores" className="grid grid-cols-1 lg:grid-cols-2 gap-6 scroll-mt-4">
