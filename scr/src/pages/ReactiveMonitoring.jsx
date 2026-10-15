@@ -24,8 +24,11 @@ import {
 } from "../components/charts/ChartKit";
 import { fetchRecent } from "../lib/telemetry";
 import { pfSummary, capacitorKvar, formatPower, formatReactive, PF_MIN } from "../lib/electrical";
+import { parseNumberBR } from "../lib/billParsing";
 import { initialEquipments } from "../data/plant";
 import { faturaReferencia as ref } from "../data/faturaReferencia";
+import ReactiveSummary from "../components/ReactiveSummary";
+import InfoTip from "../components/ui/InfoTip";
 
 // Janela analisada por sensor: as 24 h que terminam na última leitura dele
 const WINDOW_MS = 24 * 3600 * 1000;
@@ -40,9 +43,14 @@ export default function ReactiveMonitoring() {
   // Estados da Calculadora
   const [activePower, setActivePower] = useState("");
   const [currentFP, setCurrentFP] = useState("");
-  const [targetFP, setTargetFP] = useState("0,95");
-  const [energyTariff, setEnergyTariff] = useState("0,85");
-  const [reactiveTariff, setReactiveTariff] = useState("0,15");
+  const [targetFP, setTargetFP] = useState("0,92");
+  const [monthlyEnergy, setMonthlyEnergy] = useState("");
+  // Valor do kVArh excedente com tributos, como cobrado na fatura de referência
+  const [reactiveTariff, setReactiveTariff] = useState(
+    ref.itens.find((i) => i.componente === "reativo").precoComTributos.toLocaleString("pt-BR", { maximumFractionDigits: 5 })
+  );
+  const [formError, setFormError] = useState(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [result, setResult] = useState(null);
 
   // FP por setor a partir das leituras dos sensores
@@ -88,24 +96,23 @@ export default function ReactiveMonitoring() {
     setCurrentFP(fmtPf(s.pf));
     setTargetFP("0,92");
     setResult(null);
-    document.getElementById("simulador-capacitores")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setAdvancedOpen(true);
+    setTimeout(() => document.getElementById("simulador-capacitores")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
 
-  // Função de cálculo fiel do Banco de Capacitores
+  // Banco de capacitores (Qc = P · (tg φ1 − tg φ2)) e custo do reativo excedente.
+  // Excedente do mês ≈ energia × (0,92 / FP − 1), regra da REN ANEEL 1.000/2021
+  // aplicada com o FP médio (a distribuidora apura hora a hora).
   const calculateSizing = (e) => {
     e.preventDefault();
+    const n = (v) => parseNumberBR(v, NaN);
+    const p = n(activePower), fp1 = n(currentFP), fp2 = n(targetFP), vr = n(reactiveTariff), energia = n(monthlyEnergy);
 
-    const p = parseFloat(activePower.replace(",", "."));
-    const fp1 = parseFloat(currentFP.replace(",", "."));
-    const fp2 = parseFloat(targetFP.replace(",", "."));
-    const tReact = parseFloat(reactiveTariff.replace(",", "."));
+    if (!(p > 0)) return setFormError("Informe a potência ativa em kW (ex.: 500).");
+    if (!(fp1 > 0 && fp1 < 1)) return setFormError("O fator de potência atual fica entre 0 e 1 (ex.: 0,82).");
+    if (!(fp2 > fp1 && fp2 <= 1)) return setFormError("O fator de potência desejado precisa ser maior que o atual e no máximo 1 (o mínimo regulatório é 0,92).");
+    setFormError(null);
 
-    if (!p || !fp1 || !fp2 || fp1 <= 0 || fp1 >= 1 || fp2 <= fp1 || fp2 > 1) {
-      alert("Por favor, preencha valores válidos para Potência Ativa e Fatores de Potência (entre 0.01 e 0.99).");
-      return;
-    }
-
-    // Cálculo exato: Qc = P * (tan(acos(fp1)) - tan(acos(fp2)))
     const tan1 = Math.tan(Math.acos(fp1));
     const tan2 = Math.tan(Math.acos(fp2));
     const qcKvar = p * (tan1 - tan2);
@@ -115,16 +122,19 @@ export default function ReactiveMonitoring() {
     const withMargin = qcKvar * 1.05;
     const recommendedKvar = withMargin >= 1 ? Math.ceil(withMargin) : withMargin;
 
-    // Estimativa de economia mensal de excedente reativo
-    const estimatedMonthlySavings = (p * (tan1 - tan2) * 220 * (tReact || 0.15));
+    const excedente = energia > 0 && fp1 < 0.92 ? energia * (0.92 / fp1 - 1) : energia > 0 ? 0 : null;
+    const custoAtual = excedente != null && vr > 0 ? excedente * vr : null;
+    const custoDepois = fp2 >= 0.92 ? 0 : custoAtual;
 
     setResult({
       exactKvar: qcKvar,
-      recommendedKvar: recommendedKvar,
-      monthlySavings: estimatedMonthlySavings.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+      recommendedKvar,
+      excedente,
+      custoAtual,
+      economia: custoAtual != null ? custoAtual - custoDepois : null,
       powerP: p,
-      fp1: fp1,
-      fp2: fp2
+      fp1,
+      fp2,
     });
   };
 
@@ -171,11 +181,17 @@ export default function ReactiveMonitoring() {
         </div>
       )}
 
+      {/* Resposta para o cliente, a partir da fatura */}
+      <ReactiveSummary
+        fatura={ref}
+        onVerSetores={() => document.getElementById("fp-por-setor")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+      />
+
       {/* FP por setor (sensores) */}
-      <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
+      <div id="fp-por-setor" className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm scroll-mt-4">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-4">
           <div>
-            <h2 className="text-base font-bold text-slate-900">Fator de potência por setor</h2>
+            <h2 className="text-base font-bold text-slate-900">Onde o fator de potência está baixo</h2>
             <p className="text-xs text-slate-500">
               Medição dos sensores nas últimas 24 h de leitura de cada um. FP do período = energia ativa ÷ energia aparente.
             </p>
@@ -247,47 +263,21 @@ export default function ReactiveMonitoring() {
         )}
       </div>
 
-      {/* Reativo na fatura de referência (real, anonimizada) */}
-      {(() => {
-        const itens = ref.itens.filter((i) => i.componente === "reativo");
-        const valor = itens.reduce((t, i) => t + i.valor, 0);
-        const fp = itens.find((i) => /fora/i.test(i.descricao));
-        const p = itens.find((i) => !/fora/i.test(i.descricao));
-        const pctConta = valor / ref.subtotalFaturamento;
-        const brl = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-        const cards = [
-          { label: "Valor cobrado no mês", value: brl(valor), note: `${(pctConta * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% da conta de energia` },
-          { label: "Excedente fora de ponta", value: `${fp.quantidade.toLocaleString("pt-BR")} kVArh`, note: brl(fp.valor) },
-          { label: "Excedente na ponta", value: `${p.quantidade.toLocaleString("pt-BR")} kVArh`, note: brl(p.valor) },
-          { label: "Por ano, se repetir", value: brl(valor * 12), note: "Estimativa simples: 12 × o mês" },
-        ];
-        return (
-          <>
-            <div className="flex flex-wrap items-baseline justify-between gap-2 pt-2">
-              <h2 className="text-base font-bold text-slate-900">Reativo na fatura</h2>
-              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                fatura real anonimizada · {ref.referencia.split("-").reverse().join("/")}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 -mt-4">
-              Indústria {ref.subgrupo} {ref.modalidade} da {ref.distribuidora}. O excedente é apurado hora a hora quando o fator de
-              potência fica abaixo de 0,92, por isso aparece mesmo em meses com FP médio alto.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-              {cards.map((c) => (
-                <div key={c.label} className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{c.label}</p>
-                  <p className="font-heading text-2xl font-bold text-slate-900 mt-1 tabular-nums">{c.value}</p>
-                  <p className="text-xs text-slate-500 mt-1">{c.note}</p>
-                </div>
-              ))}
-            </div>
-          </>
-        );
-      })()}
-
-      {/* CALCULADORA DE BANCO DE CAPACITORES (POSICIONADA LOGO ABAIXO DO GRÁFICO) */}
-      <div id="simulador-capacitores" className="grid grid-cols-1 lg:grid-cols-2 gap-6 scroll-mt-4">
+      {/* Simulação avançada do banco de capacitores (para técnicos) */}
+      <details
+        id="simulador-capacitores"
+        open={advancedOpen}
+        onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
+        className="group scroll-mt-4 rounded-2xl border border-slate-200 bg-white/50"
+      >
+        <summary className="cursor-pointer list-none px-6 py-4 flex items-center justify-between gap-3">
+          <span>
+            <span className="block text-base font-bold text-slate-900">Simulação avançada do banco de capacitores</span>
+            <span className="block text-xs text-slate-500">Para técnicos e integradoras: dimensione com os seus próprios valores.</span>
+          </span>
+          <span className="text-xs font-semibold text-sky-600 whitespace-nowrap">{advancedOpen ? "Fechar" : "Abrir"}</span>
+        </summary>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-4 pb-4">
         {/* Formulario */}
         <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center space-x-2.5 mb-6">
@@ -297,14 +287,17 @@ export default function ReactiveMonitoring() {
             <h2 className="text-base font-bold text-slate-900">Simulação de Banco de Capacitores</h2>
           </div>
 
-          <form onSubmit={calculateSizing} className="space-y-4">
+          <form onSubmit={calculateSizing} className="space-y-4" noValidate>
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Potência Ativa (kW)
+              <label htmlFor="cap-p" className="block text-xs font-medium text-slate-700 mb-1">
+                Potência ativa (kW){" "}
+                <InfoTip>A potência que a carga consome trabalhando. Use a demanda medida da fatura ou a potência média do setor.</InfoTip>
               </label>
               <input
                 type="text"
-                placeholder="Ex: 500"
+                id="cap-p"
+                inputMode="decimal"
+                placeholder="Ex.: 500"
                 value={activePower}
                 onChange={(e) => setActivePower(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all placeholder:text-slate-400"
@@ -314,12 +307,15 @@ export default function ReactiveMonitoring() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Fator de Potência Atual
+                <label htmlFor="cap-fp1" className="block text-xs font-medium text-slate-700 mb-1">
+                  FP atual{" "}
+                  <InfoTip>Fator de potência: quanto da energia vira trabalho (de 0 a 1). Abaixo de 0,92 há cobrança de reativo.</InfoTip>
                 </label>
                 <input
+                  id="cap-fp1"
                   type="text"
-                  placeholder="Ex: 0.82"
+                  inputMode="decimal"
+                  placeholder="Ex.: 0,82"
                   value={currentFP}
                   onChange={(e) => setCurrentFP(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all placeholder:text-slate-400"
@@ -327,11 +323,13 @@ export default function ReactiveMonitoring() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Fator de Potência Desejado
+                <label htmlFor="cap-fp2" className="block text-xs font-medium text-slate-700 mb-1">
+                  FP desejado
                 </label>
                 <input
+                  id="cap-fp2"
                   type="text"
+                  inputMode="decimal"
                   value={targetFP}
                   onChange={(e) => setTargetFP(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
@@ -342,22 +340,29 @@ export default function ReactiveMonitoring() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Tarifa Energia (R$/kWh)
+                <label htmlFor="cap-e" className="block text-xs font-medium text-slate-700 mb-1">
+                  Consumo do mês (kWh){" "}
+                  <InfoTip>Opcional. Com ele, a simulação estima quanto de reativo excedente você paga no mês.</InfoTip>
                 </label>
                 <input
+                  id="cap-e"
                   type="text"
-                  value={energyTariff}
-                  onChange={(e) => setEnergyTariff(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Ex.: 243.443"
+                  value={monthlyEnergy}
+                  onChange={(e) => setMonthlyEnergy(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Tarifa Reativo (R$/kVArh)
+                <label htmlFor="cap-vr" className="block text-xs font-medium text-slate-700 mb-1">
+                  Valor do reativo (R$/kVArh){" "}
+                  <InfoTip>Preço do kVArh excedente com tributos, como aparece na fatura (linha "Consumo reativo excedente").</InfoTip>
                 </label>
                 <input
+                  id="cap-vr"
                   type="text"
+                  inputMode="decimal"
                   value={reactiveTariff}
                   onChange={(e) => setReactiveTariff(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
@@ -365,12 +370,13 @@ export default function ReactiveMonitoring() {
               </div>
             </div>
 
+            {formError && <p role="alert" className="text-xs font-medium text-rose-600">{formError}</p>}
             <button
               type="submit"
               className="w-full mt-2 py-3 bg-sky-500 hover:bg-sky-600 text-white font-medium rounded-xl text-sm flex items-center justify-center space-x-2 shadow-sm transition-colors cursor-pointer"
             >
               <Calculator className="h-4 w-4" />
-              <span>Calcular Dimensionamento</span>
+              <span>Calcular</span>
             </button>
           </form>
         </div>
@@ -396,18 +402,22 @@ export default function ReactiveMonitoring() {
                   {formatReactive(result.recommendedKvar)}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Potência reativa necessária (cálculo exato: {formatReactive(result.exactKvar)}, mais 5% de margem)
+                  Tamanho do banco de capacitores (cálculo exato: {formatReactive(result.exactKvar)}, mais 5% de margem)
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs">
                 <div>
                   <p className="text-slate-500">Correção do FP:</p>
-                  <p className="font-semibold text-slate-800 mt-0.5">{result.fp1} ➔ {result.fp2}</p>
+                  <p className="font-semibold text-slate-800 mt-0.5">{result.fp1.toLocaleString("pt-BR")} ➔ {result.fp2.toLocaleString("pt-BR")}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500">Economia Est. Excedente:</p>
-                  <p className="font-semibold text-emerald-600 mt-0.5">{result.monthlySavings} / mês</p>
+                  <p className="text-slate-500">Reativo excedente evitado:</p>
+                  <p className="font-semibold text-emerald-600 mt-0.5">
+                    {result.economia != null
+                      ? `${result.economia.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} / mês`
+                      : "informe o consumo do mês"}
+                  </p>
                 </div>
               </div>
 
@@ -416,12 +426,13 @@ export default function ReactiveMonitoring() {
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm flex items-center justify-center space-x-2 shadow-sm transition-all cursor-pointer"
               >
                 <PhoneCall className="h-4 w-4" />
-                <span>Contactar Fornecedor para Instalação</span>
+                <span>Pedir orçamento pelo WhatsApp</span>
               </button>
             </div>
           )}
         </div>
       </div>
+      </details>
     </div>
   );
 }
