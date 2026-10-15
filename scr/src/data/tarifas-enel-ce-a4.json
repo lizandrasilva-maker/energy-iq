@@ -1,0 +1,39 @@
+{
+  "distribuidora": "ENEL CE",
+  "subgrupo": "A4",
+  "resolucao": "RESOLUÇÃO HOMOLOGATÓRIA Nº 3.324, DE 24 DE AGOSTO DE 2026",
+  "vigencia": {
+    "inicio": "2026-08-26",
+    "fim": "2027-04-21"
+  },
+  "fonte": "ANEEL — Tarifas homologadas das distribuidoras (dados abertos)",
+  "atualizadoEm": "2026-10-15",
+  "observacao": "Tarifas de aplicação, sem ICMS/PIS/COFINS e sem bandeira tarifária. Energia em R$/kWh; demanda em R$/kW.",
+  "verde": {
+    "demanda": 20.82,
+    "energiaPonta": {
+      "tusd": 1.13407,
+      "te": 0.37097,
+      "total": 1.50504
+    },
+    "energiaForaPonta": {
+      "tusd": 0.12381,
+      "te": 0.20709,
+      "total": 0.3309
+    }
+  },
+  "azul": {
+    "demandaPonta": 41.65,
+    "demandaForaPonta": 20.82,
+    "energiaPonta": {
+      "tusd": 0.12381,
+      "te": 0.37097,
+      "total": 0.49478
+    },
+    "energiaForaPonta": {
+      "tusd": 0.12381,
+      "te": 0.20709,
+      "total": 0.3309
+    }
+  }
+}
