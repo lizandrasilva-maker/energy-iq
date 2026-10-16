@@ -118,31 +118,35 @@ function ComparaMlSolar({ fatura, ml, pv, precoInformado, custosML, demandaMes, 
 
       {/* Controles da simulação */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block p-3 rounded-xl bg-slate-50 border border-slate-100">
-          <span className="text-xs font-semibold text-slate-700">
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+          <label htmlFor="ml-desconto" className="text-xs font-semibold text-slate-700">
             Mercado livre: oferta {num(desconto * 100)}% abaixo do preço de hoje
-          </span>
+          </label>
           <input
-            type="range" min="0" max="0.4" step="0.05" value={desconto}
+            id="ml-desconto"
+            type="range" min="0" max="0.4" step="0.01" value={desconto}
             onChange={(e) => setDesconto(Number(e.target.value))}
             disabled={!simulado}
-            className="w-full mt-2 accent-sky-500 disabled:opacity-40"
+            className="w-full mt-2 h-6 cursor-pointer accent-sky-500 disabled:opacity-40 disabled:cursor-not-allowed"
           />
           <span className="block text-[11px] text-slate-500">
             {simulado
               ? `Simulação: ${brl(precoUsado, 2)}/MWh. Com uma proposta real, informe o preço no cartão 3.`
               : `Usando a sua proposta: ${brl(precoInformado, 2)}/MWh.`}
           </span>
-        </label>
-        <label className="block p-3 rounded-xl bg-slate-50 border border-slate-100">
-          <span className="text-xs font-semibold text-slate-700">Solar: cobrir {num(cobertura * 100)}% do consumo fora de ponta</span>
+        </div>
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+          <label htmlFor="pv-cobertura" className="text-xs font-semibold text-slate-700">
+            Solar: cobrir {num(cobertura * 100)}% do consumo fora de ponta
+          </label>
           <input
-            type="range" min="0.25" max="1" step="0.25" value={cobertura}
+            id="pv-cobertura"
+            type="range" min="0.1" max="1" step="0.05" value={cobertura}
             onChange={(e) => setCobertura(Number(e.target.value))}
-            className="w-full mt-2 accent-sky-500"
+            className="w-full mt-2 h-6 cursor-pointer accent-sky-500"
           />
           <span className="block text-[11px] text-slate-500">Usina de ≈ {num(pv.kwp)} kWp. Economia máxima, antes da Lei 14.300.</span>
-        </label>
+        </div>
       </div>
 
       {/* Lado a lado */}
@@ -428,7 +432,7 @@ export default function Savings() {
             <div>
               <label htmlFor="pv-cob" className="block text-xs font-medium text-slate-700 mb-1">Quanto do consumo fora de ponta cobrir</label>
               <select id="pv-cob" value={cobertura} onChange={(e) => setCobertura(Number(e.target.value))} className={inputCls}>
-                {[0.25, 0.5, 0.75, 1].map((c) => (
+                {[...new Set([0.25, 0.5, 0.75, 1, cobertura])].sort((a, b) => a - b).map((c) => (
                   <option key={c} value={c}>{pct(c)}</option>
                 ))}
               </select>
