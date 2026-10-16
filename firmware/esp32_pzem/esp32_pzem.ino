@@ -36,7 +36,10 @@
 #define PZEM_TX_PIN 17
 
 // --- Envio ---
-const unsigned long SEND_INTERVAL_MS = 3000;  // 3 s (≈ 29 mil linhas/dia por sensor)
+// 10 s, como a versão 1: ≈ 8,6 mil linhas/dia por sensor. Com 3 sensores,
+// ≈ 780 mil envios/mês, dentro do 1 milhão de chamadas/mês do plano grátis
+// da Vercel (a 3 s seriam ≈ 2,6 milhões) e com folga no banco grátis do Supabase.
+const unsigned long SEND_INTERVAL_MS = 10000;
 const int LEITURAS_DESCARTADAS_NO_INICIO = 2;
 
 // Energia (kWh) e frequência (Hz). Exigem as colunas da migração
