@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FileSignature, Building2, PenLine, Printer, ListChecks, Trash2, Info } from "lucide-react";
-import { faturaReferencia as ref } from "../data/faturaReferencia";
+import { useCurrentBill, mesBR } from "../lib/currentBill";
 import { simularContratoDemanda, custoDemandaMes, TOLERANCIA_ULTRAPASSAGEM } from "../lib/billXray";
 import { parseNumberBR } from "../lib/billParsing";
 import InfoTip from "../components/ui/InfoTip";
@@ -25,18 +25,29 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const inputCls =
   "w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500";
 
-const tarifaDemanda = ref.itens.find((i) => i.componente === "demanda").precoComTributos;
-const sim = simularContratoDemanda(ref.historico, ref.demandaContratadaKw, tarifaDemanda);
-const medidas = ref.historico.map((h) => h.demandaForaPontaKw);
-const minMed = Math.min(...medidas), maxMed = Math.max(...medidas);
-const meses = ref.historico.length;
-const periodo = `${ref.historico[0].mes.split("-").reverse().join("/")} a ${ref.historico[meses - 1].mes.split("-").reverse().join("/")}`;
+/** Números do contrato de demanda a partir do histórico da fatura em uso. */
+function dadosDoContrato(ref) {
+  const tarifaDemanda = ref.itens.find((i) => i.componente === "demanda").precoComTributos;
+  const medidas = ref.historico.map((h) => h.demandaForaPontaKw);
+  const meses = medidas.length;
+  return {
+    tarifaDemanda,
+    sim: simularContratoDemanda(ref.historico, ref.demandaContratadaKw, tarifaDemanda),
+    medidas,
+    minMed: Math.min(...medidas),
+    maxMed: Math.max(...medidas),
+    meses,
+    periodo: `${mesBR(ref.historico[0].mes)} a ${mesBR(ref.historico[meses - 1].mes)}`,
+  };
+}
 
-function justificativaPadrao(novoKw) {
+function justificativaPadrao(ref, { medidas, minMed, maxMed, meses, periodo }, novoKw) {
   const acima = medidas.filter((m) => m > ref.demandaContratadaKw * TOLERANCIA_ULTRAPASSAGEM).length;
   return (
     `No período de ${periodo}, a demanda medida fora de ponta da unidade variou entre ${num(minMed)} kW e ${num(maxMed)} kW, ` +
-    `acima da demanda contratada de ${num(ref.demandaContratadaKw, 0)} kW em ${acima} de ${meses} meses, com cobrança de ultrapassagem. ` +
+    (acima > 0
+      ? `acima da demanda contratada de ${num(ref.demandaContratadaKw, 0)} kW em ${acima} de ${meses} meses, com cobrança de ultrapassagem. `
+      : `com demanda contratada de ${num(ref.demandaContratadaKw, 0)} kW. `) +
     `Para adequar o contrato ao perfil real de consumo da unidade, solicitamos a alteração da demanda contratada para ${num(novoKw, 0)} kW, ` +
     `na modalidade tarifária ${ref.modalidade}.`
   );
@@ -52,24 +63,27 @@ function lerPedidos() {
 
 export default function Documents() {
   const [params] = useSearchParams();
+  const { fatura: ref } = useCurrentBill();
+  const d = useMemo(() => dadosDoContrato(ref), [ref]);
+  const { tarifaDemanda, sim, medidas, minMed, maxMed, meses } = d;
   const inicial = parseNumberBR(params.get("contrato"), null) || sim.otimo.contratoKw;
 
   const [novoKw, setNovoKw] = useState(String(inicial));
   const [form, setForm] = useState({ razaoSocial: "", cnpj: "", instalacao: "", endereco: "", responsavel: "", cargo: "", contato: "" });
-  const [justificativa, setJustificativa] = useState(justificativaPadrao(inicial));
+  const [justificativa, setJustificativa] = useState(() => justificativaPadrao(ref, d, inicial));
   const [justificativaEditada, setJustificativaEditada] = useState(false);
   const [erro, setErro] = useState(null);
   const [pedidos, setPedidos] = useState(lerPedidos);
 
   const novo = parseNumberBR(novoKw, null);
-  const custoAtual = useMemo(() => medidas.reduce((s, m) => s + custoDemandaMes(ref.demandaContratadaKw, m, tarifaDemanda), 0), []);
+  const custoAtual = useMemo(() => medidas.reduce((s, m) => s + custoDemandaMes(ref.demandaContratadaKw, m, tarifaDemanda), 0), [ref, medidas, tarifaDemanda]);
   const custoNovo = novo > 0 ? medidas.reduce((s, m) => s + custoDemandaMes(novo, m, tarifaDemanda), 0) : null;
   const economiaMes = custoNovo != null ? (custoAtual - custoNovo) / meses : null;
 
   // Justificativa acompanha o valor pedido, até a pessoa editá-la
   useEffect(() => {
-    if (!justificativaEditada && novo > 0) setJustificativa(justificativaPadrao(novo));
-  }, [novo, justificativaEditada]);
+    if (!justificativaEditada && novo > 0) setJustificativa(justificativaPadrao(ref, d, novo));
+  }, [ref, d, novo, justificativaEditada]);
 
   useEffect(() => {
     try {
@@ -227,7 +241,7 @@ ${form.endereco ? `<tr><td>Endereço da unidade</td><td>${esc(form.endereco)}</t
             type="button"
             onClick={() => {
               setJustificativaEditada(false);
-              setJustificativa(justificativaPadrao(novo || sim.otimo.contratoKw));
+              setJustificativa(justificativaPadrao(ref, d, novo || sim.otimo.contratoKw));
             }}
             className="text-xs font-semibold text-sky-600 hover:underline cursor-pointer"
           >

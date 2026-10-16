@@ -117,6 +117,17 @@ export async function pdfToImages(doc, { scale = RENDER_SCALE, quality = JPEG_QU
   return { images, text: text.trim(), totalPages: doc.numPages, sentPages: pages };
 }
 
+/** Itens de texto de cada página (para a leitura por regras, sem IA). */
+export async function pdfTextPages(doc) {
+  const pages = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    const page = await doc.getPage(n);
+    pages.push((await page.getTextContent()).items);
+    page.cleanup();
+  }
+  return pages;
+}
+
 /** Libera o documento e o worker do pdf.js. */
 export function closePdf(doc) {
   doc?.loadingTask?.destroy();

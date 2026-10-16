@@ -26,7 +26,7 @@ import { fetchRecent } from "../lib/telemetry";
 import { pfSummary, capacitorKvar, formatPower, formatReactive, PF_MIN } from "../lib/electrical";
 import { parseNumberBR } from "../lib/billParsing";
 import { initialEquipments } from "../data/plant";
-import { faturaReferencia as ref } from "../data/faturaReferencia";
+import { useCurrentBill } from "../lib/currentBill";
 import ReactiveSummary from "../components/ReactiveSummary";
 import InfoTip from "../components/ui/InfoTip";
 
@@ -45,9 +45,10 @@ export default function ReactiveMonitoring() {
   const [currentFP, setCurrentFP] = useState("");
   const [targetFP, setTargetFP] = useState("0,92");
   const [monthlyEnergy, setMonthlyEnergy] = useState("");
-  // Valor do kVArh excedente com tributos, como cobrado na fatura de referência
+  // Valor do kVArh excedente com tributos, como cobrado na fatura em uso
+  const { fatura } = useCurrentBill();
   const [reactiveTariff, setReactiveTariff] = useState(
-    ref.itens.find((i) => i.componente === "reativo").precoComTributos.toLocaleString("pt-BR", { maximumFractionDigits: 5 })
+    fatura.itens.find((i) => i.componente === "reativo")?.precoComTributos.toLocaleString("pt-BR", { maximumFractionDigits: 5 }) ?? ""
   );
   const [formError, setFormError] = useState(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -183,7 +184,7 @@ export default function ReactiveMonitoring() {
 
       {/* Resposta para o cliente, a partir da fatura */}
       <ReactiveSummary
-        fatura={ref}
+        fatura={fatura}
         onVerSetores={() => document.getElementById("fp-por-setor")?.scrollIntoView({ behavior: "smooth", block: "start" })}
       />
 

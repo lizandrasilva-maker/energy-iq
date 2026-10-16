@@ -41,6 +41,11 @@ export const COMPONENTES = {
     evitavel: false,
     nota: "Adicional definido pela ANEEL conforme o custo de geração do mês. Fora do controle do cliente.",
   },
+  compensacao: {
+    label: "Créditos de geração",
+    evitavel: false,
+    nota: "Energia gerada (solar, por exemplo) e compensada nesta conta. Abate kWh; não abate demanda nem reativo.",
+  },
 };
 
 /**

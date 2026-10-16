@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Sparkles, Plus } from "lucide-react";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import {
@@ -6,25 +6,27 @@ import {
 } from "../components/charts/ChartKit";
 
 import BillAnalyzer from "../components/BillAnalyzer";
-import { parseNumberBR } from "../lib/billParsing";
-import { faturaReferencia as ref } from "../data/faturaReferencia";
+import { useCurrentBill } from "../lib/currentBill";
 import DemandContractSimulator from "../components/DemandContractSimulator";
-
-// Histórico real (13 meses) da fatura de referência, anonimizada
-const refHistory = ref.historico.map((h) => ({
-  month: h.mes,
-  demand: h.demandaForaPontaKw,
-  demandPonta: h.demandaPontaKw,
-  consumoForaPonta: h.consumoForaPontaKwh,
-  consumoPonta: h.consumoPontaKwh,
-}));
-const tarifaDemanda = ref.itens.find((i) => i.componente === "demanda").precoComTributos;
 
 export default function DemandMonitoring() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [demandContracted, setDemandContracted] = useState(ref.demandaContratadaKw);
-  const [demandActive, setDemandActive] = useState(ref.medicao.demandaForaPontaKw);
-  const [chartData] = useState(refHistory);
+  // Histórico impresso na fatura em uso (a enviada ou a de referência)
+  const { fatura, isReference } = useCurrentBill();
+  const demandContracted = fatura.demandaContratadaKw;
+  const demandActive = fatura.medicao.demandaForaPontaKw;
+  const tarifaDemanda = fatura.itens.find((i) => i.componente === "demanda").precoComTributos;
+  const chartData = useMemo(
+    () =>
+      fatura.historico.map((h) => ({
+        month: h.mes,
+        demand: h.demandaForaPontaKw,
+        demandPonta: h.demandaPontaKw,
+        consumoForaPonta: h.consumoForaPontaKwh,
+        consumoPonta: h.consumoPontaKwh,
+      })),
+    [fatura]
+  );
 
   const maxDemand = chartData && chartData.length > 0 
     ? Math.max(...chartData.map((item) => Number(item.demand) || 0)) 
@@ -36,15 +38,6 @@ export default function DemandMonitoring() {
     ? chartData.filter((item) => (item.demand || 0) > surpassLimit).length
     : 0;
   const chart = useChartTheme();
-
-  const handleAnalysisComplete = (data) => {
-    if (data) {
-      const measured = parseNumberBR(data.demand_measured);
-      const contracted = parseNumberBR(data.demand_contracted);
-      if (measured) setDemandActive(measured);
-      if (contracted) setDemandContracted(contracted);
-    }
-  };
 
   return (
     <div className="lg:p-6 space-y-6">
@@ -116,7 +109,7 @@ export default function DemandMonitoring() {
 
       <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
         <h2 className="text-base font-bold text-slate-900">Demanda Mensal</h2>
-        <p className="text-xs text-slate-500 mb-6">Demanda medida fora de ponta vs contratada · fatura real anonimizada (13 meses)</p>
+        <p className="text-xs text-slate-500 mb-6">Demanda medida fora de ponta vs contratada · {isReference ? "fatura real anonimizada" : "sua fatura"} ({chartData.length} meses)</p>
 
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -160,12 +153,12 @@ export default function DemandMonitoring() {
         />
       </div>
 
-      <DemandContractSimulator historico={ref.historico} contratoAtualKw={demandContracted} tarifaKw={tarifaDemanda} />
+      <DemandContractSimulator historico={fatura.historico} contratoAtualKw={demandContracted} tarifaKw={tarifaDemanda} />
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <h2 className="text-base font-bold text-slate-900">Histórico de faturamento</h2>
-          <p className="text-xs text-slate-500">Como impresso na fatura de referência. Ultrapassagem = demanda medida acima de 105% da contratada.</p>
+          <p className="text-xs text-slate-500">Como impresso na fatura {isReference ? "de referência" : "enviada"}. Ultrapassagem = demanda medida acima de 105% da contratada.</p>
         </div>
 
         <div className="overflow-x-auto">
@@ -209,11 +202,7 @@ export default function DemandMonitoring() {
         </div>
       </div>
 
-      <BillAnalyzer 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onAnalysisComplete={handleAnalysisComplete} 
-      />
+      <BillAnalyzer isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 }

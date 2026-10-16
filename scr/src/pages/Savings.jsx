@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Minus, FileSignature, Zap, Store, Sun, ArrowRight, Info } from "lucide-react";
-import { faturaReferencia as ref } from "../data/faturaReferencia";
+import { useCurrentBill, mesBR } from "../lib/currentBill";
 import { partesDaConta, ajusteDemanda, correcaoFP, mercadoLivre, solar, semObra } from "../lib/savings";
 import { parseNumberBR } from "../lib/billParsing";
 import { useChartTheme } from "../components/charts/ChartKit";
@@ -11,7 +11,6 @@ const brl = (v, d = 0) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: d, minimumFractionDigits: d });
 const num = (v, d = 0) => v.toLocaleString("pt-BR", { maximumFractionDigits: d });
 const pct = (v) => `${num(v * 100, 1)}%`;
-const mesRef = ref.referencia.split("-").reverse().join("/");
 
 const inputCls =
   "w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500";
@@ -41,6 +40,8 @@ function SolutionCard({ rank, icon: Icon, title, saving, savingNote, investment,
 
 export default function Savings() {
   const chart = useChartTheme();
+  const { fatura: ref, isReference } = useCurrentBill();
+  const mesRef = mesBR(ref.referencia);
   const partes = partesDaConta(ref);
   const demanda = ajusteDemanda(ref);
   const fp = correcaoFP(ref);
@@ -55,11 +56,11 @@ export default function Savings() {
 
   const ml = useMemo(
     () => mercadoLivre(ref, { precoMWh: parseNumberBR(precoML, null), custosFixosMes: parseNumberBR(custosML, 0) }),
-    [precoML, custosML]
+    [ref, precoML, custosML]
   );
   const pv = useMemo(
     () => solar(ref, { cobertura, custoKwp: parseNumberBR(custoKwp, null), hsp: parseNumberBR(hsp, 5.5) || 5.5 }),
-    [cobertura, custoKwp, hsp]
+    [ref, cobertura, custoKwp, hsp]
   );
 
   const segs = [
@@ -287,7 +288,7 @@ export default function Savings() {
         <summary className="cursor-pointer list-none px-6 py-4 text-sm font-semibold text-slate-700">Premissas e fontes dos cálculos</summary>
         <div className="px-6 pb-5 text-xs text-slate-600 space-y-2">
           <p>
-            <strong>Fatura:</strong> {ref.cliente} ({ref.subgrupo} {ref.modalidade}, {ref.distribuidora}), referência {mesRef}, valores com
+            <strong>Fatura:</strong> {isReference ? ref.cliente : "sua fatura"} ({ref.subgrupo} {ref.modalidade}, {ref.distribuidora}), referência {mesRef}, valores com
             tributos (ICMS {num(ref.tributos.icms * 100)}%, PIS {num(ref.tributos.pis * 100, 2)}%, COFINS {num(ref.tributos.cofins * 100, 2)}%).
             Dados anonimizados.
           </p>

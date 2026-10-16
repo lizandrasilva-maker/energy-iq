@@ -16,12 +16,8 @@ import {
 } from "lucide-react";
 import Logo from "./Logo";
 import TransmissionBackdrop from "./TransmissionBackdrop";
-import { faturaReferencia } from "@/data/faturaReferencia";
 import { semObra } from "@/lib/savings";
-
-// Economia sem obra na fatura de referência: média do histórico (contrato de
-// demanda) + reativo. Mesma base da tela "Onde economizar".
-const evitavelRef = semObra(faturaReferencia);
+import { useCurrentBill } from "@/lib/currentBill";
 import { useTheme } from "@/lib/theme";
 
 const navItems = [
@@ -58,6 +54,10 @@ function ThemeToggle() {
 }
 
 export default function Layout({ children }) {
+  // Economia sem obra (contrato de demanda, média do histórico + reativo),
+  // mesma base da tela "Onde economizar"
+  const { fatura, isReference } = useCurrentBill();
+  const evitavel = semObra(fatura);
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const current = navItems.find((item) => item.path === location.pathname);
@@ -136,9 +136,9 @@ export default function Layout({ children }) {
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-green/60 to-transparent" />
           <p className="text-[11px] font-medium uppercase tracking-wider text-white/50">Economia possível</p>
           <p className="mt-1 font-heading text-2xl font-bold text-gradient-brand">
-            {evitavelRef.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+            {evitavel.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
           </p>
-          <p className="text-[11px] text-white/40">por mês, sem obra (média do histórico da fatura de referência)</p>
+          <p className="text-[11px] text-white/40">por mês, sem obra (média do histórico da {isReference ? "fatura de referência" : "sua fatura"})</p>
         </div>
       </aside>
 

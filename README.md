@@ -5,7 +5,7 @@
 Projeto do **INTEGRA SENAI 2026** (SENAI Ceará — CFP Waldyr Diogo de Siqueira), em resposta ao desafio da **Scalasolar**: *análise tarifária e viabilidade energética para consumidores do Grupo A*.
 
 - Site: **https://energy-iq-tau.vercel.app**
-- Princípio: **primeiro entender, depois decidir.** A IA só lê a fatura; todas as contas de tarifa são regras fixas e verificáveis, conferidas contra uma fatura real.
+- Princípio: **primeiro entender, depois decidir.** A leitura da fatura e todas as contas de tarifa são regras fixas e verificáveis, conferidas contra faturas reais. Sem custo de IA por fatura.
 
 ---
 
@@ -19,17 +19,17 @@ Projeto do **INTEGRA SENAI 2026** (SENAI Ceará — CFP Waldyr Diogo de Siqueira
 | **Sensores** | Medição por equipamento/setor em tempo real (potência, FP, reativa estimada, harmônicas simuladas ou medidas), histórico de energia |
 | **Onde economizar** | O que cada solução reduz na conta: contrato de demanda, fator de potência, mercado livre e solar — da mais simples para a de maior investimento |
 | **Documentos** | Carta de pedido de novo contrato de demanda para a Enel, gerada a partir do histórico, e acompanhamento do pedido |
-| **Análise de fatura** | Envio do PDF (inclusive com senha) para leitura pela IA |
+| **Analisar nova fatura** | O cliente envia o PDF da Enel CE (inclusive com senha); a fatura é lida **no navegador**, conferida com o subtotal impresso e, com *Aplicar ao painel*, passa a alimentar todas as telas |
 
-Os números de base vêm de uma **fatura real de indústria A4 Verde da Enel CE (08/2024), anonimizada** (ver *Dados e LGPD*).
+Sem fatura enviada, as telas mostram uma **fatura real de indústria A4 Verde da Enel CE (08/2024), anonimizada** (ver *Dados e LGPD*). A fatura enviada fica salva só no navegador do cliente e pode ser trocada de volta pela de exemplo.
 
 ---
 
 ## Como funciona
 
 ```
-Fatura em PDF ──► navegador (abre PDF com senha, pdf.js) ──► /api/analisar-fatura ──► Gemini
-                                                                  (chave só no servidor)
+Fatura em PDF ──► navegador: abre com senha (pdf.js) ──► leitor por regras Enel CE ──► raio-x e simulações
+                  (o arquivo não sai do computador do cliente)
 
 ESP32 + PZEM (firmware v2) ──► /api/sensor (token do dispositivo) ──► Supabase da nova versão
                                                                               │
@@ -38,6 +38,7 @@ Site (React) ◄── lê as medições ──┬──────────
 ```
 
 - **Duas fontes de medição.** O protótipo original (firmware v1) continua gravando no banco dele; esta versão só **lê** de lá. O que chega pelo firmware v2 vai para o banco da nova versão. Para cada sensor vale **quem enviou por último**; o histórico junta as duas fontes. Se uma fonte cair, a outra continua.
+- **Leitura da fatura por regras** (`scr/src/lib/enelBillParser.js`), sem IA: lê do texto do PDF os itens (com quantidade, tarifa e valor), a medição, os tributos, a demanda contratada e o histórico de 13 meses, e **confere a soma dos itens com o subtotal impresso**. Não lê nome, CPF/CNPJ nem endereço. Testado em faturas A4 Verde reais, inclusive com créditos de geração; fatura do Grupo B é recusada com explicação. Outras distribuidoras serão tratadas caso a caso (um leitor por layout).
 - **Regras de cálculo** (pasta `scr/src/lib/`), conferidas na fatura de referência:
   - preço com tributos = tarifa ÷ [(1 − PIS − COFINS) × (1 − ICMS)];
   - ultrapassagem: demanda medida acima de 105% da contratada → excedente cobrado em dobro;
@@ -51,10 +52,10 @@ Site (React) ◄── lê as medições ──┬──────────
 
 ```
 scr/                     site (React + Vite + Tailwind) e funções serverless
-  api/                   funções da Vercel: analisar-fatura.js, sensor.js
+  api/                   funções da Vercel: sensor.js; analisar-fatura.js (leitura por IA, desativada no site)
   src/pages/             telas
   src/components/        componentes (raio-x, simuladores, gráficos, layout)
-  src/lib/               regras: electrical, billXray, savings, telemetry, pdfUnlock, billParsing
+  src/lib/               regras: enelBillParser (leitura da fatura), currentBill, electrical, billXray, savings, telemetry, pdfUnlock
   src/data/              fatura de referência (anonimizada), tarifas ANEEL, planta/sensores
   scripts/               atualizar-tarifas.mjs
 firmware/esp32_pzem/     firmware v2 do ESP32 (senhas em secrets.h, fora do Git)
@@ -83,7 +84,7 @@ O `npm run dev` também roda as funções de `scr/api` localmente, no mesmo form
 |---|---|---|
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_KEY` | navegador | banco da nova versão; chave **pública** (publishable/anon) |
 | `VITE_SUPABASE_ORIGINAL_URL`, `VITE_SUPABASE_ORIGINAL_KEY` | navegador | opcional; banco do original, **somente leitura** |
-| `GEMINI_API_KEY` | servidor (`/api/analisar-fatura`) | **nunca** com prefixo `VITE_` |
+| `GEMINI_API_KEY` | servidor (`/api/analisar-fatura`) | opcional, hoje sem uso no site; **nunca** com prefixo `VITE_` |
 | `SUPABASE_URL`, `SUPABASE_KEY` | servidor (`/api/sensor`) | chave **secreta**; só no servidor |
 | `DEVICE_TOKEN` | servidor (`/api/sensor`) | o mesmo valor vai no `secrets.h` do firmware |
 
@@ -125,17 +126,18 @@ O protótipo original (site, firmware v1 e banco) é mantido **sem nenhuma alter
 ## Dados e LGPD
 
 - A fatura de referência está **anonimizada** (`scr/src/data/faturaReferencia.js`): sem nome, CNPJ, endereço, instalação ou medidor. O PDF não fica no repositório.
-- Faturas analisadas pelo site são lidas pela API do Gemini. No plano gratuito do Gemini o conteúdo pode ser usado pelo Google e revisado por pessoas; para faturas de clientes, use projeto com faturamento ativo.
+- Faturas analisadas pelo site são lidas **no navegador do cliente**: o PDF não é enviado a servidor nem a serviço de IA. Só números são extraídos; a fatura aplicada fica salva apenas naquele navegador.
 - Senha de PDF de fatura é usada só no navegador e não é enviada nem salva.
 - Senhas e chaves nunca vão para o Git (`.env.local`, `secrets.h` estão no `.gitignore`).
 
 ## Limitações conhecidas
 
-- Empresa, faturas, equipamentos e pedidos ainda não são salvos no banco (próxima etapa); pedidos de demanda ficam no navegador.
+- Empresa, faturas, equipamentos e pedidos ainda não são salvos no banco (próxima etapa); a fatura aplicada e os pedidos de demanda ficam no navegador.
+- A leitura automática cobre faturas em PDF da Enel CE do Grupo A. Foto ou fatura digitalizada não é lida. Na modalidade Azul, as simulações de demanda ainda consideram só a demanda fora de ponta.
 - O simulador de demanda usa a mesma tarifa em todos os meses: compara contratos, não prevê faturas.
 - A economia da solar é a máxima (não desconta a parcela da Lei 14.300/2022 sobre a energia compensada).
 - A configuração do ESLint herdada do original não funciona; a validação é feita pelo build e por testes no navegador.
 
 ## Uso de inteligência artificial
 
-O Gemini lê as faturas no próprio produto. A auditoria do código, o redesign e as correções desta versão tiveram apoio do Claude (Anthropic), com revisão da equipe (registro na Entrega 7 do INTEGRA).
+O produto não usa IA para ler faturas (leitura por regras). A auditoria do código, o redesign e as correções desta versão tiveram apoio do Claude (Anthropic), com revisão da equipe (registro na Entrega 7 do INTEGRA).

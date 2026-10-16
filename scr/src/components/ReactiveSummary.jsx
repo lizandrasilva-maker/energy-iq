@@ -34,14 +34,27 @@ export default function ReactiveSummary({ fatura, onVerSetores }) {
   return (
     <section className="space-y-4" aria-labelledby="reativo-resposta">
       <div className="p-5 rounded-2xl border border-emerald-200 bg-emerald-50/60">
-        <p id="reativo-resposta" className="font-heading text-lg sm:text-xl font-bold text-slate-900 text-balance">
-          Corrigir o fator de potência eliminaria cerca de {brl(custoMes)} por mês da sua conta
-          (cerca de {brl(custoMes * 12)} por ano).
-        </p>
-        <p className="text-sm text-slate-600 mt-1">
-          Hoje você paga uma multa por energia reativa: energia que circula nos motores e transformadores sem virar trabalho.
-          A distribuidora cobra quando o fator de potência fica abaixo de 0,92.
-        </p>
+        {custoMes > 0 ? (
+          <>
+            <p id="reativo-resposta" className="font-heading text-lg sm:text-xl font-bold text-slate-900 text-balance">
+              Corrigir o fator de potência eliminaria cerca de {brl(custoMes)} por mês da sua conta
+              (cerca de {brl(custoMes * 12)} por ano).
+            </p>
+            <p className="text-sm text-slate-600 mt-1">
+              Hoje você paga uma multa por energia reativa: energia que circula nos motores e transformadores sem virar trabalho.
+              A distribuidora cobra quando o fator de potência fica abaixo de 0,92.
+            </p>
+          </>
+        ) : (
+          <>
+            <p id="reativo-resposta" className="font-heading text-lg sm:text-xl font-bold text-slate-900 text-balance">
+              Nesta fatura não há multa de reativo: o fator de potência ficou dentro do limite.
+            </p>
+            <p className="text-sm text-slate-600 mt-1">
+              A distribuidora cobra quando o fator de potência fica abaixo de 0,92. Acompanhe os setores abaixo para continuar assim.
+            </p>
+          </>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -55,7 +68,11 @@ export default function ReactiveSummary({ fatura, onVerSetores }) {
             de reativo excedente na fatura de {mesRef}, {num(pctConta * 100, 1)}% da conta de energia.
           </p>
           <p className="text-xs text-slate-500">
-            {itens.map((i) => `${i.descricao.replace("Consumo reativo excedente ", "")}: ${num(i.quantidade)} kVArh`).join(" · ")}
+            {itens
+              .map((i) => /^Demanda/.test(i.descricao)
+                ? `${i.descricao}: ${num(i.quantidade, 2)} kvar`
+                : `${i.descricao.replace("Consumo reativo excedente ", "")}: ${num(i.quantidade)} kVArh`)
+              .join(" · ")}
             <InfoTip>
               kVArh é a unidade da energia reativa. A distribuidora mede hora a hora e cobra a parte que passa do limite
               permitido (fator de potência 0,92). Por isso a multa aparece mesmo quando a média do mês parece boa.

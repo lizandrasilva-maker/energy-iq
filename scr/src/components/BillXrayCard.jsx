@@ -1,5 +1,6 @@
 import { CheckCircle2, AlertTriangle, ScanLine } from "lucide-react";
 import { billXray } from "@/lib/billXray";
+import { mesBR } from "@/lib/currentBill";
 import { useChartTheme } from "./charts/ChartKit";
 
 const brl = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -22,7 +23,7 @@ export default function BillXrayCard({ fatura }) {
             <ScanLine className="h-4 w-4 text-sky-500" /> Raio-x da fatura
           </h2>
           <p className="text-xs text-slate-500">
-            Quanto cada componente pesa na conta de energia de {fatura.referencia.split("-").reverse().join("/")} ({brl(x.soma)})
+            Quanto cada componente pesa na conta de energia de {mesBR(fatura.referencia)} ({brl(x.soma)})
           </p>
         </div>
         <span
@@ -55,8 +56,9 @@ export default function BillXrayCard({ fatura }) {
               <span
                 className="block h-full rounded-full"
                 style={{
-                  width: `${Math.max(2, (c.valor / max) * 100)}%`,
-                  background: c.evitavel ? chart.critical : chart.series[0],
+                  width: `${Math.max(2, (Math.abs(c.valor) / max) * 100)}%`,
+                  // Crédito de geração (negativo) em verde: abate a conta
+                  background: c.evitavel ? chart.critical : c.valor < 0 ? chart.series[1] : chart.series[0],
                 }}
               />
             </span>

@@ -1,59 +1,63 @@
-import { useState } from "react";
-import { Gauge, Zap, Activity, Info, X, FileText, BadgeCheck } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Gauge, Zap, Activity, Info, X, FileText, BadgeCheck, FileCheck2, RotateCcw } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
   useChartTheme, AreaGradient, ChartTooltip, ChartLegend, axisProps, gridProps, lineCursor, barCursor, activeDot, formatMonth,
 } from "../components/charts/ChartKit";
 import KpiCard from "../components/charts/KpiCard";
 import BillAnalyzer from "../components/BillAnalyzer";
-import { updateIndustryDataFromBill } from "../api/base44Client";
-import { parseNumberBR, normalizeMonth } from "../lib/billParsing";
-import { faturaReferencia as ref } from "../data/faturaReferencia";
-import { billXray, simularContratoDemanda } from "../lib/billXray";
+import { simularContratoDemanda, TOLERANCIA_ULTRAPASSAGEM } from "../lib/billXray";
+import { useCurrentBill, setCurrentBill, mesBR } from "../lib/currentBill";
 import BillXrayCard from "../components/BillXrayCard";
 
-// Base: fatura real (anonimizada) de indústria A4 Verde da Enel CE, 08/2024
-const refXray = billXray(ref);
-const refItem = (k) => ref.itens.filter((i) => i.componente === k).reduce((t, i) => t + i.valor, 0);
-const refSim = simularContratoDemanda(
-  ref.historico,
-  ref.demandaContratadaKw,
-  ref.itens.find((i) => i.componente === "demanda").precoComTributos
-);
+const brl0 = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const brl = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const initialDashboardData = {
-  contractedDemand: ref.demandaContratadaKw,
-  activeDemand: ref.medicao.demandaForaPontaKw,
-  monthlyConsumption: ref.medicao.energiaForaPontaKwh + ref.medicao.energiaPontaKwh,
-  reactiveCost: refItem("reativo"),
-  companyName: `${ref.cliente} · ${ref.subgrupo} ${ref.modalidade} · ${ref.distribuidora} · fatura ${ref.referencia.split("-").reverse().join("/")}`,
-  isReference: true,
-  alertTitle: "Ultrapassagem de demanda em todos os 13 meses do histórico",
-  alertMessage:
-    `Contrato de ${ref.demandaContratadaKw} kW para uma demanda medida entre ${Math.min(...ref.historico.map((h) => h.demandaForaPontaKw)).toLocaleString("pt-BR")} e ` +
-    `${Math.max(...ref.historico.map((h) => h.demandaForaPontaKw)).toLocaleString("pt-BR")} kW. Só neste mês a multa de ultrapassagem foi de ` +
-    `${refItem("ultrapassagem").toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}. ` +
-    `Contratar ${refSim.otimo.contratoKw} kW reduziria o custo de demanda em ` +
-    `${refSim.economia.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })} nos ${refSim.meses} meses.`,
-};
+/** Indicadores, alerta e histórico do painel a partir da fatura em uso. */
+function painel(f) {
+  const soma = (k) => f.itens.filter((i) => i.componente === k).reduce((t, i) => t + i.valor, 0);
+  const sim = simularContratoDemanda(f.historico, f.demandaContratadaKw, f.itens.find((i) => i.componente === "demanda").precoComTributos);
+  const medidas = f.historico.map((h) => h.demandaForaPontaKw);
+  const n = medidas.length;
+  const acima = medidas.filter((m) => m > f.demandaContratadaKw * TOLERANCIA_ULTRAPASSAGEM).length;
+  const ultrapassagem = soma("ultrapassagem");
 
-const initialChartHistory = ref.historico.map((h) => ({
-  month: h.mes,
-  contratada: ref.demandaContratadaKw,
-  medida: h.demandaForaPontaKw,
-  consumo: h.consumoForaPontaKwh + h.consumoPontaKwh,
-  consumoForaPonta: h.consumoForaPontaKwh,
-  consumoPonta: h.consumoPontaKwh,
-}));
+  const alertTitle =
+    acima === 0
+      ? `Demanda dentro do contrato nos ${n} meses do histórico`
+      : `Ultrapassagem de demanda em ${acima === n ? `todos os ${n}` : `${acima} de ${n}`} meses do histórico`;
+  const alertMessage =
+    `Contrato de ${f.demandaContratadaKw.toLocaleString("pt-BR")} kW para uma demanda medida entre ` +
+    `${Math.min(...medidas).toLocaleString("pt-BR")} e ${Math.max(...medidas).toLocaleString("pt-BR")} kW.` +
+    (ultrapassagem > 0 ? ` Só neste mês a multa de ultrapassagem foi de ${brl(ultrapassagem)}.` : "") +
+    (sim.economia > 1
+      ? ` Contratar ${sim.otimo.contratoKw.toLocaleString("pt-BR")} kW reduziria o custo de demanda em ${brl0(sim.economia)} nos ${sim.meses} meses.`
+      : " O contrato atual já é o de menor custo para este histórico.");
 
-const HISTORY_MONTHS = 13;
+  return {
+    contractedDemand: f.demandaContratadaKw,
+    activeDemand: f.medicao.demandaForaPontaKw,
+    monthlyConsumption: (f.medicao.energiaForaPontaKwh || 0) + (f.medicao.energiaPontaKwh || 0),
+    reactiveCost: soma("reativo"),
+    alertTitle,
+    alertMessage,
+    history: f.historico.map((h) => ({
+      month: h.mes,
+      contratada: f.demandaContratadaKw,
+      medida: h.demandaForaPontaKw,
+      consumo: h.consumoForaPontaKwh + h.consumoPontaKwh,
+      consumoForaPonta: h.consumoForaPontaKwh,
+      consumoPonta: h.consumoPontaKwh,
+    })),
+  };
+}
 
 export default function Dashboard() {
   const [showAlert, setShowAlert] = useState(true);
   const [isAnalyzerOpen, setIsAnalyzerOpen] = useState(false);
-  
-  const [metrics, setMetrics] = useState(initialDashboardData);
-  const [history, setHistory] = useState(initialChartHistory);
+  const { fatura, isReference } = useCurrentBill();
+  const metrics = useMemo(() => painel(fatura), [fatura]);
+  const history = metrics.history;
   const chart = useChartTheme();
 
   /** Variação % do último mês do histórico em relação ao anterior. */
@@ -63,60 +67,6 @@ export default function Dashboard() {
     return prev ? ((last - prev) / prev) * 100 : null;
   };
 
-  const handleAnalysisComplete = (newBillData) => {
-    if (!newBillData) return;
-
-    // 1. Atualiza a camada base44 de dados
-    updateIndustryDataFromBill(newBillData);
-
-    // 2. Valores da fatura (aceita número ou texto no formato brasileiro).
-    // O prompt pede consumo em kWh: o valor é usado como veio.
-    const contracted = parseNumberBR(newBillData.demand_contracted, metrics.contractedDemand);
-    const measured = parseNumberBR(newBillData.demand_measured, metrics.activeDemand);
-    const consumptionInKWh = parseNumberBR(newBillData.consumption_total, metrics.monthlyConsumption);
-    const suggested = parseNumberBR(newBillData.suggested_demand, null);
-    // Mês no formato do histórico (AAAA-MM); sem mês legível, usa o mês atual
-    const refMonth = normalizeMonth(newBillData.reference_month) || new Date().toISOString().slice(0, 7);
-
-    // 3. Força a atualização do estado dos Cards de KPI
-    setMetrics({
-      contractedDemand: contracted,
-      activeDemand: measured,
-      monthlyConsumption: consumptionInKWh,
-      reactiveCost: null,
-      companyName: newBillData.client_name || metrics.companyName,
-      isReference: false,
-      alertTitle: measured > contracted 
-        ? "Ultrapassagem de Demanda Detectada" 
-        : "Fatura Processada com Sucesso",
-      alertMessage: measured > contracted
-        ? `A demanda medida (${measured.toLocaleString("pt-BR")} kW) superou a contratada (${contracted.toLocaleString("pt-BR")} kW).` +
-          (suggested ? ` Sugestão de readequação: ${suggested.toLocaleString("pt-BR")} kW.` : "")
-        : `Unidade Consumidora ${newBillData.uc || ''} analisada com sucesso.`
-    });
-
-    setShowAlert(true);
-
-    // 4. Atualiza os gráficos (Recharts)
-    setHistory((prevHistory) => {
-      const newEntry = {
-        month: refMonth,
-        contratada: contracted,
-        medida: measured,
-        consumo: consumptionInKWh,
-        consumoForaPonta: consumptionInKWh,
-        consumoPonta: 0,
-      };
-
-      // Substitui o mês se já existir; senão insere. Mantém ordem cronológica
-      // e só os últimos HISTORY_MONTHS meses.
-      const others = prevHistory.filter((item) => item.month !== refMonth);
-      return [...others, newEntry]
-        .sort((a, b) => a.month.localeCompare(b.month))
-        .slice(-HISTORY_MONTHS);
-    });
-  };
-
   return (
     <div className="lg:p-6 space-y-6">
       {/* Título e Ações */}
@@ -124,11 +74,24 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Painel de Gestão Energética</h1>
           <p className="text-sm text-slate-500 font-medium flex flex-wrap items-center gap-2">
-            {metrics.companyName}
-            {metrics.isReference && (
+            {isReference ? fatura.cliente : "Sua fatura"} · {fatura.subgrupo} {fatura.modalidade} · {fatura.distribuidora} · fatura {mesBR(fatura.referencia)}
+            {isReference ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200" title="Números de uma fatura real de indústria, sem dados que identifiquem a empresa (LGPD)">
                 <BadgeCheck className="h-3.5 w-3.5" /> fatura real anonimizada
               </span>
+            ) : (
+              <>
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200" title="Lida do PDF no seu navegador; fica salva só neste computador">
+                  <FileCheck2 className="h-3.5 w-3.5" /> lida do seu PDF
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentBill(null)}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline cursor-pointer"
+                >
+                  <RotateCcw className="h-3 w-3" /> voltar à fatura de exemplo
+                </button>
+              </>
             )}
           </p>
         </div>
@@ -194,22 +157,18 @@ export default function Dashboard() {
         />
         <KpiCard
           label="Reativo Excedente"
-          value={
-            metrics.reactiveCost != null
-              ? metrics.reactiveCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-              : "não informado"
-          }
+          value={brl(metrics.reactiveCost)}
           icon={Activity}
           note={
-            metrics.reactiveCost != null
+            metrics.reactiveCost > 0
               ? "Cobrado por fator de potência abaixo de 0,92 (avaliado hora a hora). Some com correção do FP."
-              : "A leitura da fatura ainda não separa o reativo."
+              : "Sem multa de reativo nesta fatura: fator de potência dentro do limite."
           }
         />
       </div>
 
       {/* Raio-x da fatura */}
-      <BillXrayCard fatura={ref} />
+      <BillXrayCard fatura={fatura} />
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -292,10 +251,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <BillAnalyzer 
-        isOpen={isAnalyzerOpen} 
-        onClose={() => setIsAnalyzerOpen(false)} 
-        onAnalysisComplete={handleAnalysisComplete} 
+      <BillAnalyzer
+        isOpen={isAnalyzerOpen}
+        onClose={() => setIsAnalyzerOpen(false)}
+        onAnalysisComplete={() => setShowAlert(true)}
       />
     </div>
   );
