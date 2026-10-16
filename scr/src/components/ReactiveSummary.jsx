@@ -5,6 +5,7 @@ import InfoTip from "./ui/InfoTip";
 import { capacitorKvar, PF_MIN } from "@/lib/electrical";
 import { parseNumberBR } from "@/lib/billParsing";
 import { useChartTheme } from "./charts/ChartKit";
+import PfGauge from "./charts/PfGauge";
 
 const brl = (v, d = 0) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: d, minimumFractionDigits: d });
 const num = (v, d = 0) => v.toLocaleString("pt-BR", { maximumFractionDigits: d });
@@ -85,20 +86,20 @@ export default function ReactiveSummary({ fatura, onVerSetores }) {
           <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             <Wrench className="h-4 w-4 text-sky-500" /> 2. Do que você precisa
           </p>
-          <p className="font-heading text-2xl font-bold text-slate-900 tabular-nums">
-            ≈ {num(Math.round(kvar / 10) * 10)} kvar
+          <div className="flex justify-center text-slate-900">
+            <PfGauge value={fpPico} label="fator de potência no pico" />
+          </div>
+          <p className="font-heading text-2xl font-bold text-slate-900 tabular-nums text-center">
+            ≈ {num(Math.max(1, Math.round(kvar / 10) * 10))} kvar
             <InfoTip>
               kvar é o tamanho do banco de capacitores: o equipamento que fornece a energia reativa dentro da fábrica, para
-              ela não vir da rede. Instalado no quadro, ele corrige o fator de potência.
+              ela não vir da rede. Instalado no quadro, ele corrige o fator de potência. Estimado pela fatura ({num(P, 0)} kW
+              e {num(Q, 0)} kVAr no pico); o valor exato sai da medição por setor.
             </InfoTip>
           </p>
-          <p className="text-sm text-slate-600">
-            de banco de capacitores. No pico de consumo, seu fator de potência fica perto de{" "}
-            <strong className="text-slate-800">{num(fpPico, 2)}</strong> e precisa chegar a 0,92.
-          </p>
-          <p className="text-xs text-slate-500">
-            Ordem de grandeza a partir da fatura ({num(P, 0)} kW e {num(Q, 0)} kVAr no pico). O valor exato sai da medição
-            por setor.{" "}
+          <p className="text-sm text-slate-600 text-center">de banco de capacitores leva o ponteiro para a faixa verde.</p>
+          <p className="text-xs text-slate-500 text-center">
+            {" "}
             {onVerSetores && (
               <button type="button" onClick={onVerSetores} className="font-semibold text-sky-600 hover:underline cursor-pointer">
                 Ver onde instalar

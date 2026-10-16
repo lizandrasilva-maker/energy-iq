@@ -15,6 +15,45 @@ const pct = (v) => `${num(v * 100, 1)}%`;
 const inputCls =
   "w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500";
 
+/** Cascata horizontal: conta de hoje, o que cada ajuste tira e a conta depois. */
+function ContaAntesDepois({ total, mesRef, passos, cores }) {
+  const ativos = passos.filter((p) => p.valor > 0.5);
+  const depois = total - ativos.reduce((t, p) => t + p.valor, 0);
+  let topo = total;
+  const linhas = [
+    { label: `Conta de energia de ${mesRef}`, de: 0, ate: total, cor: cores.conta, texto: brl(total) },
+    ...ativos.map((p) => {
+      const l = { label: p.label, de: topo - p.valor, ate: topo, cor: cores.economia, texto: `− ${brl(p.valor)}`, economia: true };
+      topo -= p.valor;
+      return l;
+    }),
+    { label: "Com os ajustes (estimativa)", de: 0, ate: depois, cor: cores.conta, texto: brl(depois), final: true },
+  ];
+  return (
+    <ul className="mt-4 space-y-2.5" aria-label="Conta hoje e depois dos ajustes sem obra">
+      {linhas.map((l) => (
+        <li key={l.label} className="grid grid-cols-1 sm:grid-cols-[minmax(0,15rem)_1fr_auto] items-center gap-x-3 gap-y-1">
+          <span className={`text-sm ${l.final ? "font-bold text-slate-900" : "text-slate-700"}`}>{l.label}</span>
+          <span className="relative h-5 rounded-md overflow-hidden" style={{ background: cores.trilho }}>
+            <span
+              className="absolute inset-y-0 rounded-md"
+              style={{
+                left: `${(l.de / total) * 100}%`,
+                width: `${Math.max(1, ((l.ate - l.de) / total) * 100)}%`,
+                background: l.cor,
+                opacity: l.final ? 0.7 : 1,
+              }}
+            />
+          </span>
+          <span className={`text-sm tabular-nums text-right ${l.economia ? "font-bold text-emerald-700" : "font-semibold text-slate-900"}`}>
+            {l.texto}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function SolutionCard({ rank, icon: Icon, title, saving, savingNote, investment, children, cta }) {
   return (
     <article className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3 min-w-0">
@@ -89,9 +128,17 @@ export default function Savings() {
         <p className="font-heading text-lg sm:text-xl font-bold text-slate-900 text-balance">
           Sem nenhuma obra, sua conta pode cair cerca de {brl(totalSemObra)} por mês.
         </p>
-        <p className="text-sm text-slate-600 mt-1">
-          Ajustando o contrato de demanda e corrigindo o fator de potência. Energia solar e mercado livre atuam em outra parte da
-          conta, a da energia consumida, que é {pct(partes.energia / partes.total)} do total.
+        <ContaAntesDepois
+          total={partes.total}
+          mesRef={mesRef}
+          passos={[
+            { label: "Ajustar o contrato de demanda", valor: demanda.economiaMes },
+            { label: "Corrigir o fator de potência", valor: fp.economiaMes },
+          ]}
+          cores={{ conta: chart.series[0], economia: chart.series[1], trilho: chart.grid }}
+        />
+        <p className="text-xs text-slate-500 mt-3">
+          Solar e mercado livre atuam em outra parte da conta: a energia consumida ({pct(partes.energia / partes.total)} do total).
         </p>
       </div>
 
