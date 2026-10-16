@@ -75,15 +75,19 @@ function ComparaMlSolar({ fatura, ml, pv, precoInformado, custosML, demandaMes, 
     { label: "Ajustar o contrato de demanda", valor: demandaMes, cor: cores.semObra, nota: "sem obra" },
     { label: "Corrigir o fator de potência", valor: fpMes, cor: cores.semObra, nota: "banco de capacitores" },
     { label: "Mercado livre", valor: mlMes, cor: cores.investimento, nota: simulado ? `simulação: oferta ${num(desconto * 100)}% abaixo` : "com a sua proposta" },
-    { label: "Energia solar", valor: pv.economiaMes, cor: cores.investimento, nota: `máximo, cobrindo ${num(cobertura * 100)}% do fora ponta` },
+    { label: "Energia solar", valor: pv.economiaMes, cor: cores.investimento, nota: `máximo, cobrindo ${num(cobertura * 100)}% do fora ponta · exige usina` },
   ];
   const max = Math.max(...barras.map((b) => b.valor), 1);
+  // Preço máximo da usina (R$/kWp) para se pagar em N anos com a economia da fatura
+  const custoKwpPara = (anos) => (pv.economiaMes * 12 * anos) / pv.kwp;
 
   const linhas = [
     ["Que parte da conta reduz", `Só a energia (TE): ${brl(ml.teAtualMes)}/mês, ${pct(ml.teAtualMes / total)} da conta`, `Energia fora de ponta (TE + TUSD): ${brl(energiaFP)}/mês, ${pct(energiaFP / total)} da conta`],
     ["Economia por mês", simulado ? `${brl(mlMes)} (simulação)` : brl(mlMes), `até ${brl(pv.economiaMes)}`],
     ["Investimento", "Nenhum: é um contrato com uma comercializadora", pv.investimento ? brl(pv.investimento) : `Alto: usina de ≈ ${num(pv.kwp)} kWp (≈ ${num(pv.areaM2 / 1000, 1)} mil m²)`],
-    ["Retorno", `Imediato, se a oferta ficar abaixo de ${brl(ml.equilibrioMWh, 2)}/MWh`, pv.paybackAnos ? `≈ ${num(pv.paybackAnos, 1)} anos` : "Informe o custo por kWp no cartão 4"],
+    ["Retorno", `Imediato, se a oferta ficar abaixo de ${brl(ml.equilibrioMWh, 2)}/MWh`, pv.paybackAnos
+      ? `≈ ${num(pv.paybackAnos, 1)} anos com o seu orçamento`
+      : `Em até 5 anos se a usina custar até ${brl(custoKwpPara(5))}/kWp; em até 10 anos, até ${brl(custoKwpPara(10))}/kWp`],
     ["Depende de", "Preço da proposta e custos de gestão e CCEE", "Orçamento da integradora, espaço para a usina e Lei 14.300"],
     ["Não reduz (nos dois)", `Demanda, ultrapassagem e reativo: ${brl(pv.naoReduz)}/mês`, null],
   ];
@@ -176,9 +180,26 @@ function ComparaMlSolar({ fatura, ml, pv, precoInformado, custosML, demandaMes, 
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">
-        Comece pelo que não exige obra (barras verdes). Mercado livre e solar atacam a energia e podem vir depois; nenhum dos dois
-        resolve a multa de demanda nem a de reativo.
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="p-3.5 rounded-xl border border-sky-200 bg-sky-50/60">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-700">Quando a solar compensa</p>
+          <p className="text-sm text-slate-700 mt-1">
+            A solar pode trazer a <strong>maior economia sobre a energia</strong>. Ela se paga em até 5 anos se o orçamento ficar em até{" "}
+            <strong className="tabular-nums">{brl(custoKwpPara(5))} por kWp</strong>, e em até 10 anos com até{" "}
+            <strong className="tabular-nums">{brl(custoKwpPara(10))} por kWp</strong>. Compare com as propostas das integradoras.
+          </p>
+        </div>
+        <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/60">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Por onde começar</p>
+          <p className="text-sm text-slate-700 mt-1">
+            Contrato de demanda e fator de potência vêm antes porque não exigem obra e resolvem o que a solar e o mercado livre não
+            resolvem: <strong className="tabular-nums">{brl(pv.naoReduz)}/mês</strong> de demanda, ultrapassagem e reativo. As soluções
+            se somam.
+          </p>
+        </div>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        Economia da solar é a máxima: pela Lei 14.300, parte do uso da rede continua cobrada sobre a energia compensada.
       </p>
     </section>
   );
