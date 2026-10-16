@@ -54,6 +54,132 @@ function ContaAntesDepois({ total, mesRef, passos, cores }) {
   );
 }
 
+/**
+ * Mercado livre × solar lado a lado, junto das soluções sem obra.
+ * Sem proposta de preço, o mercado livre é simulado com um desconto sobre
+ * o preço de hoje (escolhido pelo usuário e indicado como simulação).
+ */
+function ComparaMlSolar({ fatura, ml, pv, precoInformado, custosML, demandaMes, fpMes, cobertura, setCobertura, cores }) {
+  const [desconto, setDesconto] = useState(0.2);
+  const simulado = !(precoInformado > 0);
+  const precoUsado = simulado ? ml.equilibrioMWh * (1 - desconto) : precoInformado;
+  const mlSim = useMemo(
+    () => mercadoLivre(fatura, { precoMWh: precoUsado, custosFixosMes: custosML }),
+    [fatura, precoUsado, custosML]
+  );
+  const mlMes = Math.max(0, mlSim.economiaMes || 0);
+  const energiaFP = fatura.itens.filter((i) => i.componente === "consumo_fora_ponta").reduce((t, i) => t + i.valor, 0);
+  const total = fatura.subtotalFaturamento;
+
+  const barras = [
+    { label: "Ajustar o contrato de demanda", valor: demandaMes, cor: cores.semObra, nota: "sem obra" },
+    { label: "Corrigir o fator de potência", valor: fpMes, cor: cores.semObra, nota: "banco de capacitores" },
+    { label: "Mercado livre", valor: mlMes, cor: cores.investimento, nota: simulado ? `simulação: oferta ${num(desconto * 100)}% abaixo` : "com a sua proposta" },
+    { label: "Energia solar", valor: pv.economiaMes, cor: cores.investimento, nota: `máximo, cobrindo ${num(cobertura * 100)}% do fora ponta` },
+  ];
+  const max = Math.max(...barras.map((b) => b.valor), 1);
+
+  const linhas = [
+    ["Que parte da conta reduz", `Só a energia (TE): ${brl(ml.teAtualMes)}/mês, ${pct(ml.teAtualMes / total)} da conta`, `Energia fora de ponta (TE + TUSD): ${brl(energiaFP)}/mês, ${pct(energiaFP / total)} da conta`],
+    ["Economia por mês", simulado ? `${brl(mlMes)} (simulação)` : brl(mlMes), `até ${brl(pv.economiaMes)}`],
+    ["Investimento", "Nenhum: é um contrato com uma comercializadora", pv.investimento ? brl(pv.investimento) : `Alto: usina de ≈ ${num(pv.kwp)} kWp (≈ ${num(pv.areaM2 / 1000, 1)} mil m²)`],
+    ["Retorno", `Imediato, se a oferta ficar abaixo de ${brl(ml.equilibrioMWh, 2)}/MWh`, pv.paybackAnos ? `≈ ${num(pv.paybackAnos, 1)} anos` : "Informe o custo por kWp no cartão 4"],
+    ["Depende de", "Preço da proposta e custos de gestão e CCEE", "Orçamento da integradora, espaço para a usina e Lei 14.300"],
+    ["Não reduz (nos dois)", `Demanda, ultrapassagem e reativo: ${brl(pv.naoReduz)}/mês`, null],
+  ];
+
+  return (
+    <section className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm space-y-6" aria-labelledby="ml-solar-titulo">
+      <div>
+        <h2 id="ml-solar-titulo" className="text-base font-bold text-slate-900">Mercado livre ou energia solar?</h2>
+        <p className="text-xs text-slate-500">
+          As duas reduzem a energia consumida, mas de jeitos diferentes. Compare com as soluções sem obra.
+        </p>
+      </div>
+
+      {/* Economia por mês, mesma escala */}
+      <ul className="space-y-3" aria-label="Economia por mês de cada solução">
+        {barras.map((b) => (
+          <li key={b.label} className="grid grid-cols-1 sm:grid-cols-[minmax(0,14rem)_1fr_8rem] items-center gap-x-3 gap-y-1">
+            <span className="text-sm text-slate-700">
+              {b.label} <span className="block text-[11px] text-slate-500">{b.nota}</span>
+            </span>
+            <span className="relative h-6 rounded-md overflow-hidden" style={{ background: cores.trilho }}>
+              <span className="absolute inset-y-0 left-0 rounded-md" style={{ width: `${Math.max(1, (b.valor / max) * 100)}%`, background: b.cor }} />
+            </span>
+            <span className="text-sm font-bold tabular-nums text-slate-900 text-right">{brl(b.valor)}/mês</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-slate-500">
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: cores.semObra }} /> sem obra</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: cores.investimento }} /> troca de fornecedor ou investimento</span>
+      </div>
+
+      {/* Controles da simulação */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block p-3 rounded-xl bg-slate-50 border border-slate-100">
+          <span className="text-xs font-semibold text-slate-700">
+            Mercado livre: oferta {num(desconto * 100)}% abaixo do preço de hoje
+          </span>
+          <input
+            type="range" min="0" max="0.4" step="0.05" value={desconto}
+            onChange={(e) => setDesconto(Number(e.target.value))}
+            disabled={!simulado}
+            className="w-full mt-2 accent-sky-500 disabled:opacity-40"
+          />
+          <span className="block text-[11px] text-slate-500">
+            {simulado
+              ? `Simulação: ${brl(precoUsado, 2)}/MWh. Com uma proposta real, informe o preço no cartão 3.`
+              : `Usando a sua proposta: ${brl(precoInformado, 2)}/MWh.`}
+          </span>
+        </label>
+        <label className="block p-3 rounded-xl bg-slate-50 border border-slate-100">
+          <span className="text-xs font-semibold text-slate-700">Solar: cobrir {num(cobertura * 100)}% do consumo fora de ponta</span>
+          <input
+            type="range" min="0.25" max="1" step="0.25" value={cobertura}
+            onChange={(e) => setCobertura(Number(e.target.value))}
+            className="w-full mt-2 accent-sky-500"
+          />
+          <span className="block text-[11px] text-slate-500">Usina de ≈ {num(pv.kwp)} kWp. Economia máxima, antes da Lei 14.300.</span>
+        </label>
+      </div>
+
+      {/* Lado a lado */}
+      <div className="overflow-x-auto -mx-6 px-6">
+        <table className="w-full min-w-[560px] text-sm">
+          <thead>
+            <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+              <th className="py-2 pr-4 w-[24%]"></th>
+              <th className="py-2 pr-4">Mercado livre</th>
+              <th className="py-2">Energia solar</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {linhas.map(([criterio, a, b]) => (
+              <tr key={criterio} className="align-top">
+                <th scope="row" className="py-2.5 pr-4 text-left text-xs font-semibold text-slate-500">{criterio}</th>
+                {b == null ? (
+                  <td colSpan={2} className="py-2.5 text-slate-700">{a}</td>
+                ) : (
+                  <>
+                    <td className="py-2.5 pr-4 text-slate-700">{a}</td>
+                    <td className="py-2.5 text-slate-700">{b}</td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-slate-500">
+        Comece pelo que não exige obra (barras verdes). Mercado livre e solar atacam a energia e podem vir depois; nenhum dos dois
+        resolve a multa de demanda nem a de reativo.
+      </p>
+    </section>
+  );
+}
+
 function SolutionCard({ rank, icon: Icon, title, saving, savingNote, investment, children, cta }) {
   return (
     <article className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3 min-w-0">
@@ -329,6 +455,19 @@ export default function Savings() {
           </SolutionCard>
         </div>
       </section>
+
+      <ComparaMlSolar
+        fatura={ref}
+        ml={ml}
+        pv={pv}
+        precoInformado={parseNumberBR(precoML, null)}
+        custosML={parseNumberBR(custosML, 0)}
+        demandaMes={demanda.economiaMes}
+        fpMes={fp.economiaMes}
+        cobertura={cobertura}
+        setCobertura={setCobertura}
+        cores={{ semObra: chart.series[1], investimento: chart.series[0], trilho: chart.grid }}
+      />
 
       {/* Premissas */}
       <details className="rounded-2xl border border-slate-200 bg-white/50">
