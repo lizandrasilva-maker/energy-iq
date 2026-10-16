@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Minus, FileSignature, Zap, Store, Sun, ArrowRight, Info } from "lucide-react";
 import { useCurrentBill, mesBR } from "../lib/currentBill";
-import { partesDaConta, ajusteDemanda, correcaoFP, mercadoLivre, solar, semObra } from "../lib/savings";
+import { partesDaConta, ajusteDemanda, correcaoFP, mercadoLivre, solar, semObra, SOLAR_REFERENCIA, CUSTO_KWP_REFERENCIA } from "../lib/savings";
 import { parseNumberBR } from "../lib/billParsing";
 import { useChartTheme } from "../components/charts/ChartKit";
 import InfoTip from "../components/ui/InfoTip";
@@ -75,7 +75,7 @@ function ComparaMlSolar({ fatura, ml, pv, precoInformado, custosML, demandaMes, 
     { label: "Ajustar o contrato de demanda", valor: demandaMes, cor: cores.semObra, nota: "sem obra" },
     { label: "Corrigir o fator de potência", valor: fpMes, cor: cores.semObra, nota: "banco de capacitores" },
     { label: "Mercado livre", valor: mlMes, cor: cores.investimento, nota: simulado ? `simulação: oferta ${num(desconto * 100)}% abaixo` : "com a sua proposta" },
-    { label: "Energia solar", valor: pv.economiaMes, cor: cores.investimento, nota: `máximo, cobrindo ${num(cobertura * 100)}% do fora ponta · exige usina` },
+    { label: "Energia solar", valor: pv.economiaMes, cor: cores.investimento, nota: `cobrindo ${num(cobertura * 100)}% do fora ponta · se paga em ≈ ${num(pv.paybackAnos, 1)} anos` },
   ];
   const max = Math.max(...barras.map((b) => b.valor), 1);
   // Preço máximo da usina (R$/kWp) para se pagar em N anos com a economia da fatura
@@ -84,10 +84,8 @@ function ComparaMlSolar({ fatura, ml, pv, precoInformado, custosML, demandaMes, 
   const linhas = [
     ["Que parte da conta reduz", `Só a energia (TE): ${brl(ml.teAtualMes)}/mês, ${pct(ml.teAtualMes / total)} da conta`, `Energia fora de ponta (TE + TUSD): ${brl(energiaFP)}/mês, ${pct(energiaFP / total)} da conta`],
     ["Economia por mês", simulado ? `${brl(mlMes)} (simulação)` : brl(mlMes), `até ${brl(pv.economiaMes)}`],
-    ["Investimento", "Nenhum: é um contrato com uma comercializadora", pv.investimento ? brl(pv.investimento) : `Alto: usina de ≈ ${num(pv.kwp)} kWp (≈ ${num(pv.areaM2 / 1000, 1)} mil m²)`],
-    ["Retorno", `Imediato, se a oferta ficar abaixo de ${brl(ml.equilibrioMWh, 2)}/MWh`, pv.paybackAnos
-      ? `≈ ${num(pv.paybackAnos, 1)} anos com o seu orçamento`
-      : `Em até 5 anos se a usina custar até ${brl(custoKwpPara(5))}/kWp; em até 10 anos, até ${brl(custoKwpPara(10))}/kWp`],
+    ["Investimento", "Nenhum: é um contrato com uma comercializadora", `≈ ${brl(pv.investimento)}: usina de ≈ ${num(pv.kwp)} kWp (≈ ${num(pv.areaM2 / 1000, 1)} mil m²)`],
+    ["Retorno", `Imediato, se a oferta ficar abaixo de ${brl(ml.equilibrioMWh, 2)}/MWh`, `≈ ${num(pv.paybackAnos, 1)} anos (com a parcela da Lei 14.300, um pouco mais)`],
     ["Depende de", "Preço da proposta e custos de gestão e CCEE", "Orçamento da integradora, espaço para a usina e Lei 14.300"],
     ["Não reduz (nos dois)", `Demanda, ultrapassagem e reativo: ${brl(pv.naoReduz)}/mês`, null],
   ];
@@ -184,9 +182,10 @@ function ComparaMlSolar({ fatura, ml, pv, precoInformado, custosML, demandaMes, 
         <div className="p-3.5 rounded-xl border border-sky-200 bg-sky-50/60">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-700">Quando a solar compensa</p>
           <p className="text-sm text-slate-700 mt-1">
-            A solar pode trazer a <strong>maior economia sobre a energia</strong>. Ela se paga em até 5 anos se o orçamento ficar em até{" "}
-            <strong className="tabular-nums">{brl(custoKwpPara(5))} por kWp</strong>, e em até 10 anos com até{" "}
-            <strong className="tabular-nums">{brl(custoKwpPara(10))} por kWp</strong>. Compare com as propostas das integradoras.
+            A solar traz a <strong>maior economia sobre a energia</strong>: até <strong className="tabular-nums">{brl(pv.economiaMes)}/mês</strong>.
+            Uma usina de ≈ {num(pv.kwp)} kWp custa ≈ <strong className="tabular-nums">{brl(pv.investimento)}</strong> e se paga em{" "}
+            <strong className="tabular-nums">≈ {num(pv.paybackAnos, 1)} anos</strong>. Mesmo com orçamento de até{" "}
+            <strong className="tabular-nums">{brl(custoKwpPara(5))}/kWp</strong>, ainda se paga em 5 anos.
           </p>
         </div>
         <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/60">
@@ -249,7 +248,8 @@ export default function Savings() {
     [ref, precoML, custosML]
   );
   const pv = useMemo(
-    () => solar(ref, { cobertura, custoKwp: parseNumberBR(custoKwp, null), hsp: parseNumberBR(hsp, 5.5) || 5.5 }),
+    // Sem orçamento, usa o preço de referência (usina de 108 kWp ≈ R$ 200 mil)
+    () => solar(ref, { cobertura, custoKwp: parseNumberBR(custoKwp, null) || CUSTO_KWP_REFERENCIA, hsp: parseNumberBR(hsp, 5.5) || 5.5 }),
     [ref, cobertura, custoKwp, hsp]
   );
 
@@ -442,12 +442,10 @@ export default function Savings() {
             rank={4}
             icon={Sun}
             title="Gerar a própria energia (solar)"
-            investment={pv.investimento ? brl(pv.investimento) : "alto (peça orçamento a uma integradora)"}
+            investment={`≈ ${brl(pv.investimento)} ${custoKwp ? "(seu orçamento)" : "(preço de referência)"}`}
             saving={`até ${brl(pv.economiaMes)}/mês`}
             savingNote={
-              pv.paybackAnos
-                ? `Retorno do investimento em cerca de ${num(pv.paybackAnos, 1)} anos.`
-                : "Informe o custo por kWp do orçamento para ver o retorno."
+              `Retorno do investimento em cerca de ${num(pv.paybackAnos, 1)} anos ${custoKwp ? "com o seu orçamento" : "com o preço de referência"}.`
             }
           >
             <div>
@@ -468,7 +466,12 @@ export default function Savings() {
             </p>
             <div>
               <label htmlFor="pv-custo" className="block text-xs font-medium text-slate-700 mb-1">Custo por kWp (R$)</label>
-              <input id="pv-custo" inputMode="decimal" placeholder="Do orçamento da integradora" value={custoKwp} onChange={(e) => setCustoKwp(e.target.value)} className={inputCls} />
+              <input id="pv-custo" inputMode="decimal" placeholder={`Referência: ${brl(CUSTO_KWP_REFERENCIA)}`} value={custoKwp} onChange={(e) => setCustoKwp(e.target.value)} className={inputCls} />
+              <p className="text-[11px] text-slate-500 mt-1">
+                {custoKwp
+                  ? "Usando o seu orçamento."
+                  : `Referência de mercado: usina de ${num(SOLAR_REFERENCIA.kwp)} kWp por cerca de ${brl(SOLAR_REFERENCIA.preco)} (${SOLAR_REFERENCIA.data}). Troque pelo orçamento da integradora.`}
+              </p>
             </div>
             <p className="flex items-start gap-2 rounded-xl bg-amber-50/70 border border-amber-200 p-3 text-xs text-amber-900">
               <Info className="h-4 w-4 shrink-0 mt-px" />
@@ -516,7 +519,8 @@ export default function Savings() {
             preço ao longo do contrato.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <strong>Solar:</strong> geração = kWp × irradiação ×30 dias × 80% de desempenho; ~6 m² por kWp. Irradiação:
+            <strong>Solar:</strong> custo de referência {brl(CUSTO_KWP_REFERENCIA)}/kWp (usina de {num(SOLAR_REFERENCIA.kwp)} kWp por cerca de{" "}
+            {brl(SOLAR_REFERENCIA.preco)}, {SOLAR_REFERENCIA.data}); geração = kWp × irradiação ×30 dias × 80% de desempenho; ~6 m² por kWp. Irradiação:
             <input
               aria-label="Irradiação solar (kWh/m² por dia)"
               inputMode="decimal"

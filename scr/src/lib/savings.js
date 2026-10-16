@@ -62,6 +62,14 @@ export function mercadoLivre(f, { precoMWh = null, custosFixosMes = 0 } = {}) {
 }
 
 /**
+ * Preço de referência de usina solar, informado pela equipe (out/2026):
+ * usina de 108 kWp por cerca de R$ 200 mil. Usado quando o cliente ainda não
+ * tem orçamento; o orçamento real da integradora substitui este valor.
+ */
+export const SOLAR_REFERENCIA = { kwp: 108, preco: 200000, data: "out/2026" };
+export const CUSTO_KWP_REFERENCIA = SOLAR_REFERENCIA.preco / SOLAR_REFERENCIA.kwp;
+
+/**
  * 4. Geração solar (GD). Dimensiona para cobrir uma fração do consumo fora
  * de ponta e estima a economia MÁXIMA (energia compensada × preço da energia
  * fora ponta com tributos). Não reduz demanda, ultrapassagem nem reativo.
